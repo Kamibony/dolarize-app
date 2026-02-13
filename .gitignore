@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+dist/
+.svelte-kit/
+build/
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.pytest_cache/
+.coverage
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# System
+.DS_Store
+Thumbs.db

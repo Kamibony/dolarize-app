@@ -130,3 +130,8 @@ class FirestoreClient:
         query = self.db.collection("progresso_aulas").where(field_path="id_usuario", op_string="==", value=user_id)
         docs = query.stream()
         return [doc.to_dict() for doc in docs]
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Retrieves all user profiles."""
+        docs = self.db.collection("usuarios").stream()
+        return [doc.to_dict() for doc in docs]

@@ -1,0 +1,17 @@
+
+> dolarize-frontend@0.0.1 dev
+> vite dev
+
+▲ [WARNING] Cannot find base config file "./.svelte-kit/tsconfig.json" [tsconfig.json]
+
+    tsconfig.json:2:12:
+      2 │   "extends": "./.svelte-kit/tsconfig.json",
+        ╵              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Forced re-optimization of dependencies
+
+  VITE v5.4.21  ready in 1332 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+8:36:11 PM [vite] hmr update /src/routes/admin/+page.svelte, /src/app.css

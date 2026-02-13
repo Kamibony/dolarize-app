@@ -57,7 +57,6 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@v1
         with:
           service: dolarize-api
-          image: gcr.io/dolarize-app/backend:latest
           region: us-central1
           source: ./backend # Assumes Dockerfile is in backend or build logic handles source
           env_vars: |

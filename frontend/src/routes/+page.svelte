@@ -6,17 +6,42 @@
         { sender: 'agent', text: 'Olá. Sou o André Digital. Estou aqui para ajudar você a organizar sua jornada financeira com estrutura e segurança.' },
     ];
     let newMessage = '';
+    let isLoading = false;
+    // Hardcoded user_id for now as per instructions
+    const USER_ID = "test-user-123";
 
-    function sendMessage() {
-        if (newMessage.trim() === '') return;
+    async function sendMessage() {
+        if (newMessage.trim() === '' || isLoading) return;
 
-        messages = [...messages, { sender: 'user', text: newMessage }];
+        const userMessage = newMessage;
+        messages = [...messages, { sender: 'user', text: userMessage }];
         newMessage = '';
+        isLoading = true;
 
-        // Simulate agent response
-        setTimeout(() => {
-            messages = [...messages, { sender: 'agent', text: 'Compreendo. Vamos analisar isso com cuidado. Por favor, forneça mais detalhes.' }];
-        }, 1000);
+        try {
+            const response = await fetch('http://localhost:8080/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: userMessage,
+                    user_id: USER_ID
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+
+            const data = await response.json();
+            messages = [...messages, { sender: 'agent', text: data.response }];
+        } catch (error) {
+            console.error('Error sending message:', error);
+            messages = [...messages, { sender: 'agent', text: 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.' }];
+        } finally {
+            isLoading = false;
+        }
     }
 
     function handleKeydown(event) {
@@ -61,6 +86,17 @@
                 </div>
             </div>
         {/each}
+        {#if isLoading}
+             <div class="flex w-full justify-start" in:fade>
+                <div class="bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold shadow-lg p-4 rounded-lg">
+                    <div class="flex space-x-2">
+                        <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce"></div>
+                        <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-100"></div>
+                        <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-200"></div>
+                    </div>
+                </div>
+            </div>
+        {/if}
     </main>
 
     <!-- Input Area -->
@@ -71,12 +107,13 @@
                 bind:value={newMessage}
                 on:keydown={handleKeydown}
                 placeholder="Digite sua mensagem aqui..."
-                class="w-full bg-dolarize-card text-white placeholder-gray-500 px-6 py-4 pr-24 rounded-lg focus:outline-none focus:ring-1 focus:ring-dolarize-gold/50 focus:border-dolarize-blue-glow/50 transition-all shadow-inner border border-gray-800"
+                disabled={isLoading}
+                class="w-full bg-dolarize-card text-white placeholder-gray-500 px-6 py-4 pr-24 rounded-lg focus:outline-none focus:ring-1 focus:ring-dolarize-gold/50 focus:border-dolarize-blue-glow/50 transition-all shadow-inner border border-gray-800 disabled:opacity-50"
             />
             <button
                 on:click={sendMessage}
                 class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 text-sm font-semibold text-dolarize-gold hover:text-white transition-colors uppercase tracking-wider disabled:opacity-50"
-                disabled={!newMessage.trim()}
+                disabled={!newMessage.trim() || isLoading}
             >
                 Enviar
             </button>

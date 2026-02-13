@@ -176,5 +176,18 @@ class TestFirestoreClient(unittest.TestCase):
         mock_doc.reference.set.assert_called_with(progress_data, merge=True)
         col_ref.add.assert_not_called()
 
+    def test_get_all_users(self):
+        mock_doc1 = MagicMock()
+        mock_doc1.to_dict.return_value = {"id": "user1"}
+        mock_doc2 = MagicMock()
+        mock_doc2.to_dict.return_value = {"id": "user2"}
+
+        self.mock_db.collection.return_value.stream.return_value = [mock_doc1, mock_doc2]
+
+        users = self.client.get_all_users()
+        self.assertEqual(len(users), 2)
+        self.assertEqual(users[0]["id"], "user1")
+        self.mock_db.collection.assert_called_with("usuarios")
+
 if __name__ == '__main__':
     unittest.main()

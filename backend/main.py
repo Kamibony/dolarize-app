@@ -2,8 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from backend.agent_core import agent
-from backend.database import FirestoreClient
+from agent_core import agent
+from database import FirestoreClient
 import os
 import datetime
 

@@ -193,7 +193,7 @@ class AgentCore:
         1. Dor Principal (O que mais incomoda?)
         2. Maturidade (Iniciante, Já investe, Avançado?)
         3. Compromisso (Busca método ou apenas curiosidade?)
-        4. Classificação (Frio, Morno, Quente/Qualificado)
+        4. Classificação ("Perfil A (Qualificado/Quente)", "Perfil B (Morno/Em educação)", ou "Perfil C (Frio/Curioso)")
 
         Responda APENAS em formato JSON:
         {

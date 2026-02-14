@@ -27,10 +27,11 @@ class TestAgentCore(unittest.TestCase):
     def test_system_prompt_content(self):
         self.assertIn("André Digital", SYSTEM_PROMPT)
         self.assertIn("Calmo", SYSTEM_PROMPT)
-        self.assertIn("Seguro", SYSTEM_PROMPT)
-        self.assertIn("Objetivo", SYSTEM_PROMPT)
-        self.assertIn("Sem ansiedade", SYSTEM_PROMPT)
+        self.assertIn("Segurança não é promessa", SYSTEM_PROMPT)
         self.assertIn("Conduzir mais. Explicar menos", SYSTEM_PROMPT)
+        self.assertIn("LIMITES ABSOLUTOS", SYSTEM_PROMPT)
+        self.assertIn("ÁRVORE DE DECISÃO INTERNA", SYSTEM_PROMPT)
+        self.assertIn("Regular a ansiedade", SYSTEM_PROMPT)
 
 if __name__ == '__main__':
     unittest.main()

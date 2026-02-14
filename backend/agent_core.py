@@ -51,8 +51,8 @@ Antes de gerar a resposta, certifique-se de que a mensagem Acolhe, Organiza, Con
 class AgentCore:
     def __init__(self):
         # Initialize the model
-        # Using gemini-pro as requested/implied for text generation
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Using gemini-2.5-flash as requested/implied for text generation
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
 
     def start_chat(self, history: Optional[List[Dict[str, str]]] = None):
         """

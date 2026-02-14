@@ -10,7 +10,7 @@
 
     onMount(async () => {
         try {
-            const response = await fetch('http://localhost:8080/admin/users');
+            const response = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/users');
             if (response.ok) {
                 users = await response.json();
             } else {
@@ -28,7 +28,7 @@
         isLoadingHistory = true;
         chatHistory = [];
         try {
-            const response = await fetch(`http://localhost:8080/admin/users/${user.id}/history`);
+            const response = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/users/${user.id}/history`);
             if (response.ok) {
                 const historyData = await response.json();
 

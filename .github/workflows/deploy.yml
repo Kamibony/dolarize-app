@@ -60,5 +60,5 @@ jobs:
           region: us-central1
           source: ./backend # Assumes Dockerfile is in backend or build logic handles source
           env_vars: |-
-            GOOGLE_API_KEY="${{ secrets.GEMINI_API_KEY }}"
-            FIREBASE_PROJECT_ID="dolarize-app"
+            GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            FIREBASE_PROJECT_ID=dolarize-app

@@ -79,11 +79,11 @@ def initialize_genai() -> bool:
     if any(char in raw_key for char in ['\n', '\r', '\t', ' ']):
         logger.warning("GOOGLE_API_KEY contains whitespace characters. Proceeding to sanitize.")
 
-    # Defensive Sanitization
-    sanitized_key = raw_key.strip()
+    # Defensive Sanitization: Remove whitespace AND quotes (single/double), then whitespace again
+    sanitized_key = raw_key.strip().strip('"').strip("'").strip()
 
     if sanitized_key != raw_key:
-        logger.info(f"Sanitized GOOGLE_API_KEY. Length changed from {len(raw_key)} to {len(sanitized_key)}.")
+        logger.info(f"Sanitized GOOGLE_API_KEY. Length changed from {len(raw_key)} to {len(sanitized_key)} (Quotes/Whitespace removed).")
 
     try:
         genai.configure(api_key=sanitized_key)

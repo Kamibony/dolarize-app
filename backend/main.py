@@ -67,9 +67,65 @@ async def chat(request: ChatRequest):
         }
         db.save_chat_interaction(new_interaction)
 
+        # 5. Update User State & Analysis (Async in production, synchronous here for simplicity)
+        db.update_user_interaction(request.user_id)
+
+        # Add current interaction to history for analysis
+        gemini_history.append({"role": "user", "parts": [request.message]})
+        gemini_history.append({"role": "model", "parts": [response_text]})
+
+        analysis = agent.analyze_lead_qualification(gemini_history)
+        if analysis:
+            # Merge ID into analysis to save
+            analysis["id"] = request.user_id
+            db.save_user(analysis)
+
         return ChatResponse(response=response_text)
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class FollowUpRequest(BaseModel):
+    hours_inactive: int = 24
+
+@app.post("/admin/trigger-followup")
+async def trigger_followup(request: FollowUpRequest):
+    """
+    Triggers the follow-up engine to re-engage inactive leads.
+    """
+    try:
+        users = db.get_users_needing_followup(hours_inactive=request.hours_inactive)
+        processed_count = 0
+
+        for user in users:
+            user_id = user.get("id")
+            if not user_id:
+                continue
+
+            # Generate personalized follow-up
+            message = agent.generate_followup_message(user)
+
+            # Save interaction
+            interaction = {
+                "id_usuario": user_id,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "origem": "follow_up_engine",
+                "mensagens": [
+                    {"role": "agent", "content": message}
+                ],
+                "analise_emocional": "Neutro",
+                "precisa_intervencao_humana": False
+            }
+            db.save_chat_interaction(interaction)
+
+            # Update last interaction to avoid duplicate follow-ups
+            db.update_user_interaction(user_id)
+
+            processed_count += 1
+
+        return {"message": f"Follow-up process completed. Processed {processed_count} users."}
+    except Exception as e:
+        print(f"Error in follow-up endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/users", response_model=List[Dict[str, Any]])

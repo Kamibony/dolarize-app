@@ -47,6 +47,14 @@ class FirestoreClient:
         doc_ref.set(user_data, merge=True)
         return user_id
 
+    def update_user_interaction(self, user_id: str) -> None:
+        """Updates the last_interaction_timestamp for a user."""
+        import datetime
+        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        self.db.collection("usuarios").document(user_id).set(
+            {"last_interaction_timestamp": timestamp}, merge=True
+        )
+
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Retrieves a user profile by ID."""
         doc_ref = self.db.collection("usuarios").document(user_id)
@@ -134,4 +142,38 @@ class FirestoreClient:
     def get_all_users(self) -> List[Dict[str, Any]]:
         """Retrieves all user profiles."""
         docs = self.db.collection("usuarios").stream()
-        return [doc.to_dict() for doc in docs]
+        users = []
+        for doc in docs:
+            user = doc.to_dict()
+            user["id"] = doc.id
+            users.append(user)
+        return users
+
+    def get_users_needing_followup(self, hours_inactive: int = 24) -> List[Dict[str, Any]]:
+        """
+        Retrieves users who have not interacted within the last 'hours_inactive' hours
+        and are not yet fully converted (optional logic depending on funnel state).
+        """
+        import datetime
+
+        cutoff_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_inactive)
+        cutoff_iso = cutoff_time.isoformat()
+
+        # Query users where last_interaction_timestamp < cutoff_iso
+        # Note: This requires a composite index if we add other filters like funnel state.
+        # For now, we'll just filter by timestamp.
+        query = (
+            self.db.collection("usuarios")
+            .where(field_path="last_interaction_timestamp", op_string="<", value=cutoff_iso)
+        )
+
+        docs = query.stream()
+        users = []
+        for doc in docs:
+            user_data = doc.to_dict()
+            user_data["id"] = doc.id
+            # Optional: Filter out converted users in code if not indexed
+            # if user_data.get("classificacao_lead") != "Converted":
+            users.append(user_data)
+
+        return users

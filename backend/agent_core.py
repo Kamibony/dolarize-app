@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import google.generativeai as genai
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -178,5 +178,98 @@ class AgentCore:
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             return "Desculpe, vamos com calma. Ocorreu um erro ao processar sua mensagem."
+
+    def analyze_lead_qualification(self, history: List[Dict[str, str]]) -> Dict[str, Any]:
+        """
+        Analyzes the chat history to extract qualification metrics.
+        Returns a dictionary with extracted fields.
+        """
+        if not is_genai_configured or self.model is None:
+            return {}
+
+        analysis_prompt = """
+        ANÁLISE DE LEAD - INTERNO
+        Com base no histórico da conversa acima, extraia as seguintes informações sobre o usuário:
+        1. Dor Principal (O que mais incomoda?)
+        2. Maturidade (Iniciante, Já investe, Avançado?)
+        3. Compromisso (Busca método ou apenas curiosidade?)
+        4. Classificação (Frio, Morno, Quente/Qualificado)
+
+        Responda APENAS em formato JSON:
+        {
+            "dor_principal": "...",
+            "maturidade": "...",
+            "compromisso": "...",
+            "classificacao_lead": "..."
+        }
+        Se não houver informação suficiente para algum campo, preencha com null.
+        """
+
+        try:
+            # We create a new chat just for analysis to not pollute the main context
+            # or simply send the whole history as a prompt.
+            # Sending history as context is easier.
+
+            # Construct the full prompt
+            full_prompt = "Histórico da conversa:\n"
+            for msg in history:
+                role = "Usuário" if msg["role"] == "user" else "André"
+                content = msg["parts"][0] if isinstance(msg["parts"], list) else msg["parts"]
+                full_prompt += f"{role}: {content}\n"
+
+            full_prompt += f"\n{analysis_prompt}"
+
+            response = self.model.generate_content(full_prompt)
+
+            # Parse JSON from response
+            import json
+            import re
+
+            text = response.text
+            # Extract JSON block if wrapped in markdown code blocks
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                json_str = match.group(0)
+                return json.loads(json_str)
+            else:
+                # Try to parse the whole text if no code block
+                return json.loads(text)
+
+        except Exception as e:
+            logger.error(f"Error analyzing lead: {e}")
+            return {}
+
+    def generate_followup_message(self, user_profile: Dict[str, Any]) -> str:
+        """
+        Generates a follow-up message for a user based on their profile.
+        """
+        if not is_genai_configured or self.model is None:
+            return "Olá! Como estão seus estudos sobre dolarização?"
+
+        name = user_profile.get("nome", "Investidor")
+        pain = user_profile.get("dor_principal", "a instabilidade do real")
+        maturity = user_profile.get("maturidade", "iniciante")
+
+        prompt = f"""
+        Você é André Digital. O usuário {name} não interage há algum tempo.
+        Perfil:
+        - Dor: {pain}
+        - Maturidade: {maturity}
+
+        Gere uma mensagem curta de follow-up (máximo 2 frases) para reengajar este usuário.
+        Lembre-se:
+        1. Mostre que você lembra da dor dele.
+        2. Não seja insistente/chato. Seja um mentor preocupado com o progresso.
+        3. Termine com uma pergunta fácil de responder.
+
+        Exemplo: "Olá [Nome], pensando naquela sua dúvida sobre [Dor], conseguiu avançar? O mercado não espera."
+        """
+
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"Error generating follow-up: {e}")
+            return "Olá! Gostaria de retomar nossa conversa sobre sua proteção patrimonial?"
 
 agent = AgentCore()

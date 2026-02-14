@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "interacoes_chat",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "id_usuario",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

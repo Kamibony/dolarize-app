@@ -1,20 +1,28 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import sys
 import os
 
-# Add backend to path (backend is now 2 levels up relative to this file)
+# Add backend to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from backend.agent_core import AgentCore, SYSTEM_PROMPT
 
 class TestAgentCore(unittest.TestCase):
     def test_initialization(self):
-        # Mock genai.GenerativeModel
-        with unittest.mock.patch('google.generativeai.GenerativeModel') as mock_model:
-            agent = AgentCore()
-            self.assertIsNotNone(agent)
-            mock_model.assert_called_with('gemini-2.5-flash')
+        # We need to ensure AgentCore initializes with a model when configured
+        with patch('backend.agent_core.is_genai_configured', True):
+            # Mock genai.GenerativeModel
+            with patch('google.generativeai.GenerativeModel') as MockModel:
+                agent = AgentCore()
+                MockModel.assert_called_with('gemini-2.5-flash')
+                self.assertIsNotNone(agent.model)
+
+    def test_initialization_failure(self):
+        # Test initialization when GenAI is not configured
+        with patch('backend.agent_core.is_genai_configured', False):
+             agent = AgentCore()
+             self.assertIsNone(agent.model)
 
     def test_system_prompt_content(self):
         self.assertIn("André Digital", SYSTEM_PROMPT)

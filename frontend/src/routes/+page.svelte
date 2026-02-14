@@ -19,7 +19,7 @@
         isLoading = true;
 
         try {
-            const response = await fetch('http://localhost:8080/chat', {
+            const response = await fetch('https://dolarize-api-493794054971.us-central1.run.app/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

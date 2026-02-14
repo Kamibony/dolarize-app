@@ -14,7 +14,7 @@ class TestAgentCore(unittest.TestCase):
         with unittest.mock.patch('google.generativeai.GenerativeModel') as mock_model:
             agent = AgentCore()
             self.assertIsNotNone(agent)
-            mock_model.assert_called_with('gemini-pro')
+            mock_model.assert_called_with('gemini-2.5-flash')
 
     def test_system_prompt_content(self):
         self.assertIn("André Digital", SYSTEM_PROMPT)

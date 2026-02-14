@@ -178,9 +178,12 @@ class TestFirestoreClient(unittest.TestCase):
 
     def test_get_all_users(self):
         mock_doc1 = MagicMock()
-        mock_doc1.to_dict.return_value = {"id": "user1"}
+        mock_doc1.id = "user1"
+        mock_doc1.to_dict.return_value = {"nome": "User 1"}
+
         mock_doc2 = MagicMock()
-        mock_doc2.to_dict.return_value = {"id": "user2"}
+        mock_doc2.id = "user2"
+        mock_doc2.to_dict.return_value = {"nome": "User 2"}
 
         self.mock_db.collection.return_value.stream.return_value = [mock_doc1, mock_doc2]
 
@@ -188,6 +191,36 @@ class TestFirestoreClient(unittest.TestCase):
         self.assertEqual(len(users), 2)
         self.assertEqual(users[0]["id"], "user1")
         self.mock_db.collection.assert_called_with("usuarios")
+
+    def test_update_user_interaction(self):
+        user_id = "user123"
+        self.client.update_user_interaction(user_id)
+
+        self.mock_db.collection.assert_called_with("usuarios")
+        self.mock_db.collection.return_value.document.assert_called_with(user_id)
+        # Check set call
+        args, kwargs = self.mock_db.collection.return_value.document.return_value.set.call_args
+        self.assertIn("last_interaction_timestamp", args[0])
+        self.assertEqual(kwargs["merge"], True)
+
+    def test_get_users_needing_followup(self):
+        # Mock query
+        mock_query = MagicMock()
+
+        mock_doc1 = MagicMock()
+        mock_doc1.id = "user1"
+        mock_doc1.to_dict.return_value = {"nome": "Inactive User"}
+
+        mock_query.stream.return_value = [mock_doc1]
+
+        self.mock_db.collection.return_value.where.return_value = mock_query
+
+        users = self.client.get_users_needing_followup(hours_inactive=24)
+
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0]["id"], "user1")
+        self.mock_db.collection.assert_called_with("usuarios")
+        self.mock_db.collection.return_value.where.assert_called()
 
 if __name__ == '__main__':
     unittest.main()

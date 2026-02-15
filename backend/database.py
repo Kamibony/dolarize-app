@@ -160,7 +160,36 @@ class FirestoreClient:
             users.append(user)
         return users
 
-    def get_users_needing_followup(self, hours_inactive: int = 24, max_followups: int = 2) -> List[Dict[str, Any]]:
+    def get_dashboard_stats(self) -> Dict[str, Any]:
+        """
+        Calculates and returns the aggregated dashboard statistics.
+        """
+        users = self.get_all_users()
+        total_leads = len(users)
+
+        distribution = {"A": 0, "B": 0, "C": 0}
+
+        for user in users:
+            classification = user.get("classificacao_lead", "")
+            if isinstance(classification, str):
+                if classification.startswith("A"):
+                    distribution["A"] += 1
+                elif classification.startswith("B"):
+                    distribution["B"] += 1
+                elif classification.startswith("C"):
+                    distribution["C"] += 1
+                # If unclassified or other, we might count it as C or separately
+                # defaulting to ignoring for distribution if not A/B/C
+
+        conversion_rate_a = (distribution["A"] / total_leads * 100) if total_leads > 0 else 0.0
+
+        return {
+            "total_leads": total_leads,
+            "conversion_rate_a": round(conversion_rate_a, 1),
+            "funnel_distribution": distribution
+        }
+
+    def get_users_needing_followup(self, hours_inactive: int = 24) -> List[Dict[str, Any]]:
         """
         Retrieves users who have not interacted within the last 'hours_inactive' hours,
         are not yet fully converted, and have not exceeded the max follow-up count.

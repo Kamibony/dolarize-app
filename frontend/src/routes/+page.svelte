@@ -7,8 +7,18 @@
     ];
     let newMessage = '';
     let isLoading = false;
+    let currentTier = 'C'; // Default to Cold/Welcome
     // Hardcoded user_id for now as per instructions
     const USER_ID = "test-user-123";
+
+    // Dynamic background based on tier
+    $: backgroundClasses = (() => {
+        switch (currentTier) {
+            case 'A': return 'bg-gradient-to-br from-dolarize-dark via-[#0F172A] to-dolarize-gold/10'; // Qualified: Subtle Gold Hint
+            case 'B': return 'bg-gradient-to-br from-dolarize-dark via-[#0F172A] to-dolarize-blue-glow/20'; // Education: Subtle Blue Hint
+            default: return 'bg-dolarize-dark'; // Cold: Standard Dark
+        }
+    })();
 
     async function sendMessage() {
         if (newMessage.trim() === '' || isLoading) return;
@@ -36,6 +46,11 @@
 
             const data = await response.json();
             messages = [...messages, { sender: 'agent', text: data.response }];
+
+            // Update UI state if tier is provided
+            if (data.user_tier) {
+                currentTier = data.user_tier;
+            }
         } catch (error) {
             console.error('Error sending message:', error);
             messages = [...messages, { sender: 'agent', text: 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.' }];
@@ -58,7 +73,7 @@
     }
 </script>
 
-<div class="flex flex-col h-screen bg-dolarize-dark text-white font-sans overflow-hidden">
+<div class={`flex flex-col h-screen text-white font-sans overflow-hidden transition-all duration-1000 ease-in-out ${backgroundClasses}`}>
     <!-- Header -->
     <header class="flex items-center justify-between px-6 py-4 border-b border-dolarize-blue-glow/30 bg-dolarize-dark/95 backdrop-blur-sm sticky top-0 z-10">
         <div class="flex flex-col">

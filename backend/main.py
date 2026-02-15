@@ -27,6 +27,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    user_tier: str
 
 def run_lead_qualification(user_id: str, history: List[Dict[str, Any]]):
     """
@@ -88,10 +89,29 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         gemini_history.append({"role": "user", "parts": [request.message]})
         gemini_history.append({"role": "model", "parts": [response_text]})
 
-        # Run analysis in background
-        background_tasks.add_task(run_lead_qualification, request.user_id, gemini_history)
+        analysis = agent.analyze_lead_qualification(gemini_history)
+        current_classification = ""
 
-        return ChatResponse(response=response_text)
+        if analysis:
+            # Merge ID into analysis to save
+            analysis["id"] = request.user_id
+            db.save_user(analysis)
+            current_classification = analysis.get("classificacao_lead", "")
+        else:
+            # Fallback to existing user data if analysis fails
+            user_data = db.get_user(request.user_id)
+            if user_data:
+                current_classification = user_data.get("classificacao_lead", "")
+
+        # Determine User Tier
+        user_tier = "C" # Default / Welcome
+        if isinstance(current_classification, str):
+            if "A" in current_classification or "Quente" in current_classification or "Qualificado" in current_classification:
+                user_tier = "A"
+            elif "B" in current_classification or "Morno" in current_classification:
+                user_tier = "B"
+
+        return ChatResponse(response=response_text, user_tier=user_tier)
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -144,6 +164,17 @@ async def get_users():
     try:
         return db.get_all_users()
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/stats")
+async def get_dashboard_stats():
+    """
+    Returns aggregated dashboard statistics.
+    """
+    try:
+        return db.get_dashboard_stats()
+    except Exception as e:
+        print(f"Error in stats endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/users/{user_id}/history", response_model=List[Dict[str, Any]])

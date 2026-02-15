@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -28,12 +28,25 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
+def run_lead_qualification(user_id: str, history: List[Dict[str, Any]]):
+    """
+    Background task to analyze lead qualification and update user profile.
+    """
+    try:
+        analysis = agent.analyze_lead_qualification(history)
+        if analysis:
+            # Merge ID into analysis to save
+            analysis["id"] = user_id
+            db.save_user(analysis)
+    except Exception as e:
+        print(f"Error in background lead qualification: {e}")
+
 @app.get("/")
 async def root():
     return {"message": "Dolarize API is running"}
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     try:
         # 1. Fetch history
         raw_history = db.get_chat_history(request.user_id, limit=20)
@@ -67,18 +80,16 @@ async def chat(request: ChatRequest):
         }
         db.save_chat_interaction(new_interaction)
 
-        # 5. Update User State & Analysis (Async in production, synchronous here for simplicity)
-        db.update_user_interaction(request.user_id)
+        # 5. Update User State & Analysis (Async via BackgroundTasks)
+        # Reset follow-up count as user interacted
+        db.update_user_interaction(request.user_id, reset_followup_count=True)
 
         # Add current interaction to history for analysis
         gemini_history.append({"role": "user", "parts": [request.message]})
         gemini_history.append({"role": "model", "parts": [response_text]})
 
-        analysis = agent.analyze_lead_qualification(gemini_history)
-        if analysis:
-            # Merge ID into analysis to save
-            analysis["id"] = request.user_id
-            db.save_user(analysis)
+        # Run analysis in background
+        background_tasks.add_task(run_lead_qualification, request.user_id, gemini_history)
 
         return ChatResponse(response=response_text)
     except Exception as e:
@@ -118,8 +129,8 @@ async def trigger_followup(request: FollowUpRequest):
             }
             db.save_chat_interaction(interaction)
 
-            # Update last interaction to avoid duplicate follow-ups
-            db.update_user_interaction(user_id)
+            # Update last interaction and increment follow-up count to avoid infinite loop
+            db.update_user_interaction(user_id, increment_followup_count=True)
 
             processed_count += 1
 

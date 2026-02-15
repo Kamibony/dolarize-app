@@ -57,7 +57,7 @@ class TestPhase2(unittest.TestCase):
         mock_db.save_user.assert_called_with(expected_data)
 
         # Check timestamp update
-        mock_db.update_user_interaction.assert_called_with("test_user")
+        mock_db.update_user_interaction.assert_called_with("test_user", reset_followup_count=True)
 
     @patch('main.db')
     @patch('main.agent')
@@ -79,10 +79,8 @@ class TestPhase2(unittest.TestCase):
         self.assertEqual(mock_db.update_user_interaction.call_count, 2)
 
         # Verify call args
-        calls = mock_db.update_user_interaction.call_args_list
-        # Verify calls exist
-        self.assertTrue(any(c[0][0] == "user1" for c in calls))
-        self.assertTrue(any(c[0][0] == "user2" for c in calls))
+        mock_db.update_user_interaction.assert_any_call("user1", increment_followup_count=True)
+        mock_db.update_user_interaction.assert_any_call("user2", increment_followup_count=True)
 
 if __name__ == '__main__':
     unittest.main()

@@ -3,6 +3,7 @@ from firebase_admin import credentials, firestore
 from google.cloud import firestore as google_firestore
 from typing import List, Dict, Any, Optional
 import os
+import datetime
 
 class FirestoreClient:
     def __init__(self, service_account_path: Optional[str] = None):
@@ -47,12 +48,22 @@ class FirestoreClient:
         doc_ref.set(user_data, merge=True)
         return user_id
 
-    def update_user_interaction(self, user_id: str) -> None:
-        """Updates the last_interaction_timestamp for a user."""
-        import datetime
+    def update_user_interaction(self, user_id: str, reset_followup_count: bool = False, increment_followup_count: bool = False) -> None:
+        """
+        Updates the last_interaction_timestamp for a user.
+        Optionally resets or increments the follow_up_count.
+        """
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        update_data = {"last_interaction_timestamp": timestamp}
+
+        if reset_followup_count:
+            update_data["follow_up_count"] = 0
+        elif increment_followup_count:
+            update_data["follow_up_count"] = google_firestore.Increment(1)
+
         self.db.collection("usuarios").document(user_id).set(
-            {"last_interaction_timestamp": timestamp}, merge=True
+            update_data, merge=True
         )
 
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -149,19 +160,15 @@ class FirestoreClient:
             users.append(user)
         return users
 
-    def get_users_needing_followup(self, hours_inactive: int = 24) -> List[Dict[str, Any]]:
+    def get_users_needing_followup(self, hours_inactive: int = 24, max_followups: int = 2) -> List[Dict[str, Any]]:
         """
-        Retrieves users who have not interacted within the last 'hours_inactive' hours
-        and are not yet fully converted (optional logic depending on funnel state).
+        Retrieves users who have not interacted within the last 'hours_inactive' hours,
+        are not yet fully converted, and have not exceeded the max follow-up count.
         """
-        import datetime
-
         cutoff_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_inactive)
         cutoff_iso = cutoff_time.isoformat()
 
         # Query users where last_interaction_timestamp < cutoff_iso
-        # Note: This requires a composite index if we add other filters like funnel state.
-        # For now, we'll just filter by timestamp.
         query = (
             self.db.collection("usuarios")
             .where(field_path="last_interaction_timestamp", op_string="<", value=cutoff_iso)
@@ -172,8 +179,10 @@ class FirestoreClient:
         for doc in docs:
             user_data = doc.to_dict()
             user_data["id"] = doc.id
-            # Optional: Filter out converted users in code if not indexed
-            # if user_data.get("classificacao_lead") != "Converted":
-            users.append(user_data)
+
+            # Anti-Spam Check: Filter by follow_up_count
+            follow_up_count = user_data.get("follow_up_count", 0)
+            if follow_up_count < max_followups:
+                users.append(user_data)
 
         return users

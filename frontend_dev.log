@@ -1,0 +1,16 @@
+
+> dolarize-frontend@0.0.1 dev
+> vite dev --host
+
+Forced re-optimization of dependencies
+
+  VITE v5.4.21  ready in 1612 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.0.2:5173/
+10:19:55 PM [vite] page reload .svelte-kit/generated/client/nodes/0.js
+10:19:55 PM [vite] page reload .svelte-kit/generated/client/nodes/1.js
+10:19:55 PM [vite] page reload .svelte-kit/generated/client/nodes/2.js
+10:19:55 PM [vite] page reload .svelte-kit/generated/client/app.js
+10:19:55 PM [vite] page reload .svelte-kit/generated/client/matchers.js
+10:19:55 PM [vite] page reload .svelte-kit/generated/server/internal.js

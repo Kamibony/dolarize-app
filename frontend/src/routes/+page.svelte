@@ -2,6 +2,8 @@
     import { onMount } from 'svelte';
     import { fade, fly } from 'svelte/transition';
 
+    let chatStarted = false; // New state variable
+
     let messages = [
         { sender: 'agent', text: 'Olá. Sou o André Digital. Estou aqui para ajudar você a organizar sua jornada financeira com estrutura e segurança.' },
     ];
@@ -74,64 +76,81 @@
 </script>
 
 <div class={`flex flex-col h-screen text-white font-sans overflow-hidden transition-all duration-1000 ease-in-out ${backgroundClasses}`}>
-    <!-- Header -->
-    <header class="flex items-center justify-between px-6 py-4 border-b border-dolarize-blue-glow/30 bg-dolarize-dark/95 backdrop-blur-sm sticky top-0 z-10">
-        <div class="flex flex-col">
-            <h1 class="text-xl font-bold tracking-tight text-white">André Digital</h1>
-            <span class="text-xs text-dolarize-gold uppercase tracking-widest font-semibold">Extensão Dólarize 2.0</span>
-        </div>
-        <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]"></div>
-    </header>
-
-    <!-- Chat Area -->
-    <main class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6" bind:this={chatContainer}>
-        {#each messages as message}
-            <div
-                in:fly="{{ y: 20, duration: 300 }}"
-                class={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-                <div class={`
-                    max-w-[85%] md:max-w-[70%] p-4 rounded-lg shadow-lg relative
-                    ${message.sender === 'user'
-                        ? 'bg-transparent text-gray-200 text-right border border-gray-700/50'
-                        : 'bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold shadow-[0_4px_20px_rgba(0,0,0,0.2)]'
-                    }
-                `}>
-                    <p class="leading-relaxed text-sm md:text-base">{message.text}</p>
-                </div>
-            </div>
-        {/each}
-        {#if isLoading}
-             <div class="flex w-full justify-start" in:fade>
-                <div class="bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold shadow-lg p-4 rounded-lg">
-                    <div class="flex space-x-2">
-                        <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce"></div>
-                        <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-100"></div>
-                        <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-200"></div>
-                    </div>
-                </div>
-            </div>
-        {/if}
-    </main>
-
-    <!-- Input Area -->
-    <footer class="p-4 md:p-6 bg-dolarize-dark border-t border-dolarize-blue-glow/20">
-        <div class="relative max-w-4xl mx-auto">
-            <input
-                type="text"
-                bind:value={newMessage}
-                on:keydown={handleKeydown}
-                placeholder="Digite sua mensagem aqui..."
-                disabled={isLoading}
-                class="w-full bg-dolarize-card text-white placeholder-gray-500 px-6 py-4 pr-24 rounded-lg focus:outline-none focus:ring-1 focus:ring-dolarize-gold/50 focus:border-dolarize-blue-glow/50 transition-all shadow-inner border border-gray-800 disabled:opacity-50"
-            />
+    {#if !chatStarted}
+        <!-- Landing Page View -->
+        <div in:fade={{ duration: 500 }} out:fade={{ duration: 300 }} class="flex-1 flex flex-col items-center justify-center p-6 text-center z-10">
+            <h1 class="text-4xl md:text-6xl font-bold text-white tracking-tight mb-6">Proteja seu patrimônio. Construa sua estrutura.</h1>
+            <p class="mt-4 text-xl text-gray-300 max-w-2xl mx-auto mb-12">Você está a um passo de falar com o André Digital. Inicie seu diagnóstico financeiro agora.</p>
             <button
-                on:click={sendMessage}
-                class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 text-sm font-semibold text-dolarize-gold hover:text-white transition-colors uppercase tracking-wider disabled:opacity-50"
-                disabled={!newMessage.trim() || isLoading}
+                on:click={() => chatStarted = true}
+                class="bg-dolarize-gold text-dolarize-dark font-bold py-3 px-8 rounded-full shadow-lg hover:bg-yellow-500 transition-colors text-lg uppercase tracking-wide"
             >
-                Enviar
+                Iniciar Diagnóstico
             </button>
         </div>
-    </footer>
+    {:else}
+        <!-- Chat View -->
+        <div in:fade={{ duration: 500 }} class="flex flex-col h-full w-full">
+            <!-- Header -->
+            <header class="flex items-center justify-between px-6 py-4 border-b border-dolarize-blue-glow/30 bg-dolarize-dark/95 backdrop-blur-sm sticky top-0 z-10">
+                <div class="flex flex-col">
+                    <h1 class="text-xl font-bold tracking-tight text-white">André Digital</h1>
+                    <span class="text-xs text-dolarize-gold uppercase tracking-widest font-semibold">Extensão Dólarize 2.0</span>
+                </div>
+                <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]"></div>
+            </header>
+
+            <!-- Chat Area -->
+            <main class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6" bind:this={chatContainer}>
+                {#each messages as message}
+                    <div
+                        in:fly="{{ y: 20, duration: 300 }}"
+                        class={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                        <div class={`
+                            max-w-[85%] md:max-w-[70%] p-4 rounded-lg shadow-lg relative
+                            ${message.sender === 'user'
+                                ? 'bg-transparent text-gray-200 text-right border border-gray-700/50'
+                                : 'bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold shadow-[0_4px_20px_rgba(0,0,0,0.2)]'
+                            }
+                        `}>
+                            <p class="leading-relaxed text-sm md:text-base">{message.text}</p>
+                        </div>
+                    </div>
+                {/each}
+                {#if isLoading}
+                    <div class="flex w-full justify-start" in:fade>
+                        <div class="bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold shadow-lg p-4 rounded-lg">
+                            <div class="flex space-x-2">
+                                <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce"></div>
+                                <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-100"></div>
+                                <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-200"></div>
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+            </main>
+
+            <!-- Input Area -->
+            <footer class="p-4 md:p-6 bg-dolarize-dark border-t border-dolarize-blue-glow/20">
+                <div class="relative max-w-4xl mx-auto">
+                    <input
+                        type="text"
+                        bind:value={newMessage}
+                        on:keydown={handleKeydown}
+                        placeholder="Digite sua mensagem aqui..."
+                        disabled={isLoading}
+                        class="w-full bg-dolarize-card text-white placeholder-gray-500 px-6 py-4 pr-24 rounded-lg focus:outline-none focus:ring-1 focus:ring-dolarize-gold/50 focus:border-dolarize-blue-glow/50 transition-all shadow-inner border border-gray-800 disabled:opacity-50"
+                    />
+                    <button
+                        on:click={sendMessage}
+                        class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 text-sm font-semibold text-dolarize-gold hover:text-white transition-colors uppercase tracking-wider disabled:opacity-50"
+                        disabled={!newMessage.trim() || isLoading}
+                    >
+                        Enviar
+                    </button>
+                </div>
+            </footer>
+        </div>
+    {/if}
 </div>

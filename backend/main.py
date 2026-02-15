@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from agent_core import agent
 from database import FirestoreClient
+from routers import webhooks
 import os
 import datetime
 
@@ -17,6 +18,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include Webhooks Router
+app.include_router(webhooks.router)
 
 # Initialize Firestore
 db = FirestoreClient()

@@ -129,7 +129,10 @@ class AgentCore:
         # Initialize the model
         # Using gemini-2.5-flash as requested/implied for text generation
         if is_genai_configured:
-            self.model = genai.GenerativeModel('gemini-2.5-flash')
+            self.model = genai.GenerativeModel(
+                model_name='gemini-2.5-flash',
+                system_instruction=SYSTEM_PROMPT
+            )
         else:
             self.model = None
             logger.error("AgentCore initialized without a valid GenAI configuration.")
@@ -164,20 +167,28 @@ class AgentCore:
         try:
             # Create a chat session with the provided history
             chat = self.model.start_chat(history=history)
-
-            # If history is empty, this is the first interaction.
-            # We prepend the system prompt to the user message to set the context.
-            if not history:
-                prompt_with_context = f"{SYSTEM_PROMPT}\n\n[Início da Conversa]\nUsuário: {user_message}"
-                response = chat.send_message(prompt_with_context)
-            else:
-                # For subsequent messages, the history maintains the context (including the initial system prompt)
-                response = chat.send_message(user_message)
-
+            response = chat.send_message(user_message)
             return response.text
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             return "Desculpe, vamos com calma. Ocorreu um erro ao processar sua mensagem."
+
+    @staticmethod
+    def format_history(raw_history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Helper to convert Firestore history to Gemini history format.
+        """
+        gemini_history = []
+        # Firestore returns most recent first, so reverse to get chronological order
+        for interaction in reversed(raw_history):
+            if "mensagens" in interaction:
+                for msg in interaction["mensagens"]:
+                    role = "model" if msg["role"] == "agent" else "user"
+                    gemini_history.append({
+                        "role": role,
+                        "parts": [msg["content"]]
+                    })
+        return gemini_history
 
     def analyze_lead_qualification(self, history: List[Dict[str, str]]) -> Dict[str, Any]:
         """

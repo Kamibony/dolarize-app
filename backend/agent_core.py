@@ -190,9 +190,18 @@ class AgentCore:
 
         knowledge_files = []
         persona_files = []
+        core_prompt = SYSTEM_PROMPT # Default fallback
 
         if self.db:
             try:
+                # Fetch Dynamic Core Prompt
+                dynamic_prompt = self.db.get_core_prompt()
+                if dynamic_prompt and len(dynamic_prompt.strip()) > 0:
+                    core_prompt = dynamic_prompt
+                    logger.info("Using Dynamic Core Prompt from Firestore.")
+                else:
+                    logger.info("Using Hardcoded Default Core Prompt.")
+
                 # Get list of file records from Firestore
                 # We get all files and separate them
                 file_records = self.db.get_knowledge_files()
@@ -211,13 +220,13 @@ class AgentCore:
                          except Exception as e:
                              logger.error(f"Error retrieving file {file_name} from Gemini: {e}")
             except Exception as e:
-                logger.error(f"Error fetching knowledge files from DB: {e}")
+                logger.error(f"Error fetching data from DB: {e}")
 
         logger.info(f"Initializing Agent with {len(persona_files)} persona files and {len(knowledge_files)} knowledge files.")
 
         # Construct Hybrid System Instruction
-        # Layer 1: Immutable Core (SYSTEM_PROMPT)
-        system_instruction_parts = [SYSTEM_PROMPT]
+        # Layer 1: Immutable Core (Dynamic or Static)
+        system_instruction_parts = [core_prompt]
 
         # Layer 2: Dynamic Injection - Persona
         if persona_files:
@@ -228,7 +237,7 @@ class AgentCore:
             system_instruction_parts.extend(persona_files)
             system_instruction_parts.append("\n--- FIM DOS ARQUIVOS DE PERSONALIDADE ---\n")
 
-        # Layer 2: Dynamic Injection - Knowledge
+        # Layer 3: Dynamic Injection - Knowledge
         if knowledge_files:
             system_instruction_parts.append("\n\n--- INÍCIO DOS ARQUIVOS DE CONHECIMENTO ---\n")
             system_instruction_parts.append("Baseie suas respostas técnicas EXCLUSIVAMENTE nos arquivos de documentos de conhecimento fornecidos abaixo.\n")
@@ -242,10 +251,10 @@ class AgentCore:
             )
         except Exception as e:
              logger.error(f"Error initializing GenerativeModel with knowledge base: {e}")
-             # Fallback to text only
+             # Fallback to text only (using the determined core prompt)
              self.model = genai.GenerativeModel(
                 model_name='gemini-2.5-flash',
-                system_instruction=SYSTEM_PROMPT
+                system_instruction=core_prompt
             )
 
     def start_chat(self, history: Optional[List[Dict[str, str]]] = None):

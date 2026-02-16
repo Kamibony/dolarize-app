@@ -9,8 +9,8 @@
     let isLoadingHistory = false;
     let dashboardStats = null;
 
-    // CRM vs KB Mode
-    let mode = 'crm'; // 'crm' | 'kb'
+    // CRM vs KB vs Config Mode
+    let mode = 'crm'; // 'crm' | 'kb' | 'config'
 
     // Knowledge Base State
     let activeKbTab = 'knowledge'; // 'knowledge' | 'persona'
@@ -19,6 +19,12 @@
     let isUploading = false;
     let uploadStatus = ''; // 'success', 'error', ''
     let fileInput;
+
+    // Config State
+    let corePromptText = '';
+    let isLoadingPrompt = false;
+    let isSavingPrompt = false;
+    let promptStatus = ''; // 'saved', 'reset', 'error', ''
 
     onMount(async () => {
         try {
@@ -45,9 +51,78 @@
         }
     });
 
-    // Fetch files when switching to KB mode
+    // Fetch files or prompt when switching modes
     $: if (mode === 'kb') {
         fetchFiles();
+    } else if (mode === 'config') {
+        fetchCorePrompt();
+    }
+
+    async function fetchCorePrompt() {
+        isLoadingPrompt = true;
+        promptStatus = '';
+        try {
+            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/config/core-prompt');
+            if (res.ok) {
+                const data = await res.json();
+                corePromptText = data.prompt;
+            } else {
+                console.error("Failed to fetch prompt");
+            }
+        } catch (e) {
+            console.error("Error fetching prompt:", e);
+        } finally {
+            isLoadingPrompt = false;
+        }
+    }
+
+    async function saveCorePrompt() {
+        if (!confirm('ATENÇÃO: Você está prestes a alterar o comportamento fundamental da IA. Tem certeza?')) return;
+
+        isSavingPrompt = true;
+        promptStatus = '';
+        try {
+            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/config/core-prompt', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: corePromptText })
+            });
+
+            if (res.ok) {
+                promptStatus = 'saved';
+            } else {
+                promptStatus = 'error';
+            }
+        } catch (e) {
+            console.error("Error saving prompt:", e);
+            promptStatus = 'error';
+        } finally {
+            isSavingPrompt = false;
+        }
+    }
+
+    async function resetCorePrompt() {
+        if (!confirm('ATENÇÃO: Isso irá apagar todas as personalizações e restaurar o prompt original de fábrica. Esta ação é irreversível. Continuar?')) return;
+
+        isSavingPrompt = true; // Use same loading state
+        promptStatus = '';
+        try {
+            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/config/core-prompt/reset', {
+                method: 'POST'
+            });
+
+            if (res.ok) {
+                promptStatus = 'reset';
+                await fetchCorePrompt(); // Reload text
+            } else {
+                promptStatus = 'error';
+            }
+        } catch (e) {
+            console.error("Error resetting prompt:", e);
+            promptStatus = 'error';
+        } finally {
+            isSavingPrompt = false;
+        }
     }
 
     async function fetchFiles() {
@@ -185,6 +260,12 @@
                 >
                     Conhecimento
                 </button>
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'config' ? 'bg-red-500 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'config'; selectedUser = null; }}
+                >
+                    Nuclear
+                </button>
             </div>
         </div>
 
@@ -225,7 +306,7 @@
                         {/each}
                     </ul>
                 {/if}
-            {:else}
+            {:else if mode === 'kb'}
                 <!-- Knowledge Base Info -->
                 <div class="p-6 text-sm text-gray-400 space-y-4">
                     <p>Gerencie aqui os arquivos que compõem o "cérebro" do André Digital.</p>
@@ -233,6 +314,18 @@
                     <div class="bg-blue-900/20 border border-blue-500/30 p-3 rounded text-xs text-blue-200">
                         Arquivos suportados: PDF, DOCX, TXT.
                     </div>
+                </div>
+            {:else if mode === 'config'}
+                 <!-- Config Info -->
+                <div class="p-6 text-sm text-gray-400 space-y-4">
+                    <div class="bg-red-900/20 border border-red-500/30 p-4 rounded text-xs text-red-200 font-bold flex items-start gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6 shrink-0">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                        <p>AVISO: Esta área altera o DNA do agente. Edições incorretas podem quebrar a lógica de segurança.</p>
+                    </div>
+                    <p>Aqui você edita o "Prompt do Sistema" (System Prompt), que define a identidade e as regras imutáveis do André Digital.</p>
+                    <p class="text-xs text-gray-500">Este texto tem precedência sobre todos os arquivos de conhecimento.</p>
                 </div>
             {/if}
         </div>
@@ -394,7 +487,7 @@
                     </div>
                 </div>
             {/if}
-        {:else}
+        {:else if mode === 'kb'}
             <!-- Knowledge Base Mode -->
              <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
                 <div class="flex justify-between items-start mb-8">
@@ -537,6 +630,105 @@
                     {/if}
                 </div>
              </div>
+        {:else if mode === 'config'}
+            <!-- Config Mode -->
+            <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gray-900" in:fade>
+                <div class="mb-6">
+                    <h1 class="text-2xl font-bold tracking-tight text-white mb-2 flex items-center gap-2">
+                        <span class="text-red-500">⚙️</span> Configurações Nucleares
+                    </h1>
+                    <p class="text-sm text-gray-400">Edite diretamente o prompt do sistema. As alterações têm efeito imediato na próxima interação.</p>
+                </div>
+
+                <!-- Warning Banner -->
+                <div class="bg-orange-900/20 border-l-4 border-orange-500 p-4 mb-6 rounded-r">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm text-orange-200">
+                                <strong class="font-bold text-orange-100">CUIDADO EXTREMO:</strong>
+                                Editar este texto pode alterar a personalidade, segurança e limites do agente. Modifique apenas se souber exatamente o que está fazendo.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Messages -->
+                {#if promptStatus === 'saved'}
+                    <div class="mb-4 p-3 bg-green-900/30 border border-green-500/50 text-green-300 text-sm rounded flex items-center gap-2 animate-pulse">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                        Prompt atualizado com sucesso. O cérebro do agente foi reiniciado.
+                    </div>
+                {:else if promptStatus === 'reset'}
+                     <div class="mb-4 p-3 bg-blue-900/30 border border-blue-500/50 text-blue-300 text-sm rounded flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" /></svg>
+                        Padrão de fábrica restaurado com sucesso.
+                    </div>
+                {:else if promptStatus === 'error'}
+                     <div class="mb-4 p-3 bg-red-900/30 border border-red-500/50 text-red-300 text-sm rounded flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                        Erro ao salvar alterações. Tente novamente.
+                    </div>
+                {/if}
+
+                <!-- Editor -->
+                <div class="flex-1 flex flex-col relative bg-black/40 rounded-lg border border-gray-700 shadow-inner">
+                    {#if isLoadingPrompt}
+                        <div class="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm rounded-lg">
+                            <div class="text-white animate-pulse font-mono">Carregando DNA...</div>
+                        </div>
+                    {/if}
+
+                    <div class="bg-gray-800 px-4 py-2 rounded-t-lg border-b border-gray-700 flex justify-between items-center">
+                        <span class="text-xs font-mono text-gray-400">system_prompt.txt</span>
+                        <span class="text-[10px] text-gray-500 uppercase">UTF-8</span>
+                    </div>
+
+                    <textarea
+                        bind:value={corePromptText}
+                        class="flex-1 bg-transparent text-gray-300 font-mono text-sm p-4 resize-none focus:outline-none focus:ring-0 custom-scrollbar leading-relaxed"
+                        spellcheck="false"
+                        disabled={isSavingPrompt}
+                    ></textarea>
+                </div>
+
+                <!-- Controls -->
+                <div class="mt-6 flex justify-between items-center pt-6 border-t border-white/10">
+                    <button
+                        on:click={resetCorePrompt}
+                        disabled={isSavingPrompt}
+                        class="text-red-400 hover:text-red-300 text-xs font-bold uppercase tracking-wider px-4 py-2 rounded border border-red-500/20 hover:bg-red-900/20 transition-all flex items-center gap-2"
+                    >
+                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                        Restaurar Padrão de Fábrica
+                    </button>
+
+                    <button
+                        on:click={saveCorePrompt}
+                        disabled={isSavingPrompt}
+                        class={`bg-dolarize-gold text-dolarize-dark font-bold text-sm px-6 py-2.5 rounded shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2 ${isSavingPrompt ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        {#if isSavingPrompt}
+                             <svg class="animate-spin h-4 w-4 text-dolarize-dark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Salvando...
+                        {:else}
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Salvar Alterações
+                        {/if}
+                    </button>
+                </div>
+            </div>
         {/if}
     </main>
 </div>

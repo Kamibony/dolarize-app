@@ -264,3 +264,25 @@ class FirestoreClient:
             data["id"] = doc.id
             return data
         return None
+
+    def get_core_prompt(self) -> Optional[str]:
+        """
+        Retrieves the dynamic core prompt from system settings.
+        Returns None if not found, triggering fallback to hardcoded default.
+        """
+        try:
+            doc = self.db.collection("system_settings").document("agent_config").get()
+            if doc.exists:
+                return doc.to_dict().get("core_prompt_text")
+        except Exception as e:
+            print(f"Error fetching core prompt: {e}")
+        return None
+
+    def update_core_prompt(self, prompt_text: str) -> None:
+        """
+        Updates the dynamic core prompt in system settings.
+        """
+        self.db.collection("system_settings").document("agent_config").set(
+            {"core_prompt_text": prompt_text, "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+            merge=True
+        )

@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, F
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from agent_core import agent
+from agent_core import agent, SYSTEM_PROMPT
 from database import FirestoreClient
 from routers import webhooks
 import os
@@ -278,6 +278,60 @@ async def delete_knowledge_file(file_id: str):
         raise
     except Exception as e:
         print(f"Error deleting file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Core Prompt Management Endpoints
+
+class ConfigUpdate(BaseModel):
+    prompt: str
+
+@app.get("/admin/config/core-prompt")
+async def get_core_prompt():
+    """
+    Retrieves the current core prompt.
+    If dynamic prompt is not set, returns the hardcoded factory default.
+    """
+    try:
+        current_prompt = db.get_core_prompt()
+        if not current_prompt:
+            current_prompt = SYSTEM_PROMPT
+        return {"prompt": current_prompt}
+    except Exception as e:
+        print(f"Error getting core prompt: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/admin/config/core-prompt")
+async def update_core_prompt(config: ConfigUpdate):
+    """
+    Updates the dynamic core prompt and refreshes the agent.
+    """
+    try:
+        # Update DB
+        db.update_core_prompt(config.prompt)
+
+        # Refresh Agent
+        agent.refresh_knowledge_base()
+
+        return {"message": "Core prompt updated successfully"}
+    except Exception as e:
+        print(f"Error updating core prompt: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/config/core-prompt/reset")
+async def reset_core_prompt():
+    """
+    Resets the core prompt to the hardcoded factory default.
+    """
+    try:
+        # Update DB with hardcoded default
+        db.update_core_prompt(SYSTEM_PROMPT)
+
+        # Refresh Agent
+        agent.refresh_knowledge_base()
+
+        return {"message": "Core prompt reset to factory default"}
+    except Exception as e:
+        print(f"Error resetting core prompt: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

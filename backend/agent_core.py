@@ -3,6 +3,7 @@ import sys
 import logging
 import google.generativeai as genai
 from typing import List, Dict, Optional, Any
+from database import FirestoreClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -66,7 +67,12 @@ Todas as suas respostas devem seguir este template de 4 camadas:
 3. INSTRUÇÃO/DIREÇÃO: A resposta objetiva ou a recusa educada.
 4. PRÓXIMO PASSO: A pergunta ou ação final para manter a condução ("Vamos começar por...?", "Me diga...").
 
-6. EXEMPLOS DE COMPORTAMENTO
+6. BASE DE CONHECIMENTO (DYNAMIC RAG)
+- Baseie suas respostas técnicas EXCLUSIVAMENTE nos arquivos de documentos fornecidos.
+- Se a resposta não estiver nos documentos, declare que precisa verificar a informação e não alucine.
+- Use as informações dos arquivos para enriquecer suas explicações, mantendo sempre o tom do André Digital.
+
+7. EXEMPLOS DE COMPORTAMENTO
 - Usuário: "Qual a próxima cripto que vai explodir?"
   André Digital: "Entendo sua busca por oportunidade. Mas o Dólarize não trabalha com apostas ou previsões. Ensinamos a construir patrimônio sólido. Você busca aventura ou estrutura?"
 
@@ -153,16 +159,74 @@ is_genai_configured = initialize_genai()
 
 class AgentCore:
     def __init__(self):
-        # Initialize the model
-        # Using gemini-2.5-flash as requested/implied for text generation
+        self.db = None
+        self.model = None
+
+        try:
+            self.db = FirestoreClient()
+        except Exception as e:
+            logger.error(f"Failed to initialize FirestoreClient in AgentCore: {e}")
+
         if is_genai_configured:
-            self.model = genai.GenerativeModel(
-                model_name='gemini-2.5-flash',
-                system_instruction=SYSTEM_PROMPT
-            )
+            # Initialize with knowledge base if possible, otherwise default
+            self.refresh_knowledge_base()
+            if self.model is None:
+                 # Fallback if refresh failed completely (shouldn't happen as it has try/except)
+                 self.model = genai.GenerativeModel(
+                    model_name='gemini-2.5-flash',
+                    system_instruction=SYSTEM_PROMPT
+                )
         else:
             self.model = None
             logger.error("AgentCore initialized without a valid GenAI configuration.")
+
+    def refresh_knowledge_base(self):
+        """
+        Refreshes the knowledge base by fetching active files and re-initializing the model.
+        """
+        if not is_genai_configured:
+            return
+
+        active_files = []
+        if self.db:
+            try:
+                # Get list of file records from Firestore
+                file_records = self.db.get_knowledge_files()
+                for record in file_records:
+                    file_name = record.get("name") # This should be the Gemini file name like 'files/xyz'
+                    if file_name:
+                         # We need to retrieve the actual file object handle from GenAI or pass the name
+                         # For system_instruction, passing the file object (retrieved via get_file) is best.
+                         try:
+                             # Note: get_file returns a File object.
+                             # If we do this too often, it might be slow.
+                             # Ideally we should cache this or only do it on explicit refresh.
+                             file_obj = genai.get_file(file_name)
+                             active_files.append(file_obj)
+                         except Exception as e:
+                             logger.error(f"Error retrieving file {file_name} from Gemini: {e}")
+            except Exception as e:
+                logger.error(f"Error fetching knowledge files from DB: {e}")
+
+        logger.info(f"Initializing Agent with {len(active_files)} knowledge base files.")
+
+        # Construct system instruction
+        # We pass the text prompt first, then the files.
+        system_instruction_parts = [SYSTEM_PROMPT]
+        system_instruction_parts.extend(active_files)
+
+        try:
+            self.model = genai.GenerativeModel(
+                model_name='gemini-2.5-flash',
+                system_instruction=system_instruction_parts
+            )
+        except Exception as e:
+             logger.error(f"Error initializing GenerativeModel with knowledge base: {e}")
+             # Fallback to text only
+             self.model = genai.GenerativeModel(
+                model_name='gemini-2.5-flash',
+                system_instruction=SYSTEM_PROMPT
+            )
 
     def start_chat(self, history: Optional[List[Dict[str, str]]] = None):
         """

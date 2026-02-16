@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -7,6 +7,9 @@ from database import FirestoreClient
 from routers import webhooks
 import os
 import datetime
+import shutil
+import tempfile
+import google.generativeai as genai
 
 app = FastAPI(title="Dolarize API", version="1.0.0")
 
@@ -186,6 +189,95 @@ async def get_user_history(user_id: str):
     try:
         return db.get_chat_history(user_id, limit=50)
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Knowledge Base Endpoints
+
+@app.post("/admin/knowledge/upload")
+async def upload_knowledge_file(file: UploadFile = File(...)):
+    try:
+        # 1. Save to temp file
+        # Using tempfile.NamedTemporaryFile to ensure we have a file path
+        # suffix is important for maintaining extension
+        suffix = os.path.splitext(file.filename)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = tmp.name
+
+        try:
+            # 2. Upload to Gemini
+            # Determine mime_type if not provided
+            mime_type = file.content_type
+            if not mime_type:
+                 if suffix.lower() == '.pdf': mime_type = 'application/pdf'
+                 elif suffix.lower() in ['.txt', '.md']: mime_type = 'text/plain'
+                 elif suffix.lower() == '.csv': mime_type = 'text/csv'
+                 else: mime_type = 'application/octet-stream' # Fallback
+
+            # Using genai.upload_file directly
+            gemini_file = genai.upload_file(path=tmp_path, mime_type=mime_type, display_name=file.filename)
+
+            # 3. Save metadata to Firestore
+            file_data = {
+                "name": gemini_file.name, # e.g. "files/..."
+                "display_name": gemini_file.display_name,
+                "uri": gemini_file.uri,
+                "mime_type": gemini_file.mime_type,
+                "size_bytes": gemini_file.size_bytes,
+                # Store state if possible, though it's an enum usually
+                "state": str(gemini_file.state.name) if hasattr(gemini_file.state, 'name') else str(gemini_file.state)
+            }
+
+            doc_id = db.add_knowledge_file(file_data)
+
+            # 4. Refresh Agent
+            agent.refresh_knowledge_base()
+
+            return {"id": doc_id, "file": file_data}
+
+        finally:
+            # Cleanup temp file
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    except Exception as e:
+        print(f"Error uploading file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/knowledge/files")
+async def list_knowledge_files():
+    try:
+        return db.get_knowledge_files()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/admin/knowledge/files/{file_id}")
+async def delete_knowledge_file(file_id: str):
+    try:
+        # 1. Get file metadata
+        file_data = db.get_knowledge_file(file_id)
+        if not file_data:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # 2. Delete from Gemini
+        gemini_name = file_data.get("name")
+        if gemini_name:
+            try:
+                genai.delete_file(gemini_name)
+            except Exception as e:
+                print(f"Warning: Failed to delete file from Gemini (might be already deleted): {e}")
+
+        # 3. Delete from Firestore
+        db.delete_knowledge_file(file_id)
+
+        # 4. Refresh Agent
+        agent.refresh_knowledge_base()
+
+        return {"message": "File deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting file: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

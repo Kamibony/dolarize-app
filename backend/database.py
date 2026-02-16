@@ -5,6 +5,9 @@ from typing import List, Dict, Any, Optional
 import os
 import datetime
 
+# Configuration
+max_followups = 3
+
 class FirestoreClient:
     def __init__(self, service_account_path: Optional[str] = None):
         """
@@ -215,3 +218,36 @@ class FirestoreClient:
                 users.append(user_data)
 
         return users
+
+    def add_knowledge_file(self, file_data: Dict[str, Any]) -> str:
+        """
+        Saves a knowledge base file record.
+        """
+        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        file_data["created_at"] = timestamp
+
+        update_time, doc_ref = self.db.collection("knowledge_base").add(file_data)
+        return doc_ref.id
+
+    def get_knowledge_files(self) -> List[Dict[str, Any]]:
+        """Retrieves all active knowledge base files."""
+        docs = self.db.collection("knowledge_base").order_by("created_at", direction=google_firestore.Query.DESCENDING).stream()
+        files = []
+        for doc in docs:
+            f = doc.to_dict()
+            f["id"] = doc.id
+            files.append(f)
+        return files
+
+    def delete_knowledge_file(self, file_id: str) -> None:
+        """Deletes a knowledge base file record."""
+        self.db.collection("knowledge_base").document(file_id).delete()
+
+    def get_knowledge_file(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a single knowledge base file record."""
+        doc = self.db.collection("knowledge_base").document(file_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            return data
+        return None

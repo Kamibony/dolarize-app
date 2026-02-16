@@ -446,7 +446,9 @@
                             <table class="w-full text-left border-collapse">
                                 <thead class="bg-black/20 text-xs text-gray-400 uppercase font-semibold sticky top-0 z-10 backdrop-blur-sm">
                                     <tr>
-                                        <th class="p-4 border-b border-white/5">Lead</th>
+                                        <th class="p-4 border-b border-white/5">ID</th>
+                                        <th class="p-4 border-b border-white/5">Nome</th>
+                                        <th class="p-4 border-b border-white/5">E-mail</th>
                                         <th class="p-4 border-b border-white/5">Status</th>
                                         <th class="p-4 border-b border-white/5 hidden md:table-cell">Dor Principal</th>
                                         <th class="p-4 border-b border-white/5 hidden md:table-cell">Maturidade</th>
@@ -456,9 +458,22 @@
                                 <tbody class="divide-y divide-white/5 text-sm">
                                     {#each users as user}
                                     <tr class="hover:bg-white/5 transition-colors group">
+                                        <td class="p-4 font-mono text-xs text-gray-500">
+                                            {user.id.substring(0, 8)}...
+                                        </td>
                                         <td class="p-4 font-medium text-white">
-                                            <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{user.nome || 'Sem Nome'}</div>
-                                            <div class="text-[10px] text-gray-500 font-mono">{user.id.substring(0, 8)}...</div>
+                                            {#if user.nome}
+                                                <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{user.nome}</div>
+                                            {:else}
+                                                <div class="text-gray-600 italic text-xs">Aguardando...</div>
+                                            {/if}
+                                        </td>
+                                        <td class="p-4 text-gray-400">
+                                            {#if user.email}
+                                                <div>{user.email}</div>
+                                            {:else}
+                                                <div class="text-gray-600 italic text-xs">Aguardando...</div>
+                                            {/if}
                                         </td>
                                         <td class="p-4">
                                             <span class={`text-[10px] uppercase font-bold px-2 py-1 rounded-full border shadow-sm ${

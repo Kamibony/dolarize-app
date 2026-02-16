@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -194,7 +194,7 @@ async def get_user_history(user_id: str):
 # Knowledge Base Endpoints
 
 @app.post("/admin/knowledge/upload")
-async def upload_knowledge_file(file: UploadFile = File(...)):
+async def upload_knowledge_file(file: UploadFile = File(...), file_type: str = Form("knowledge")):
     try:
         # 1. Save to temp file
         # Using tempfile.NamedTemporaryFile to ensure we have a file path
@@ -228,7 +228,7 @@ async def upload_knowledge_file(file: UploadFile = File(...)):
                 "state": str(gemini_file.state.name) if hasattr(gemini_file.state, 'name') else str(gemini_file.state)
             }
 
-            doc_id = db.add_knowledge_file(file_data)
+            doc_id = db.add_knowledge_file(file_data, file_type=file_type)
 
             # 4. Refresh Agent
             agent.refresh_knowledge_base()
@@ -245,9 +245,9 @@ async def upload_knowledge_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/knowledge/files")
-async def list_knowledge_files():
+async def list_knowledge_files(type: Optional[str] = None):
     try:
-        return db.get_knowledge_files()
+        return db.get_knowledge_files(file_type=type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

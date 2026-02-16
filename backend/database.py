@@ -219,23 +219,36 @@ class FirestoreClient:
 
         return users
 
-    def add_knowledge_file(self, file_data: Dict[str, Any]) -> str:
+    def add_knowledge_file(self, file_data: Dict[str, Any], file_type: str = "knowledge") -> str:
         """
         Saves a knowledge base file record.
         """
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         file_data["created_at"] = timestamp
+        file_data["type"] = file_type  # 'knowledge' or 'persona'
 
         update_time, doc_ref = self.db.collection("knowledge_base").add(file_data)
         return doc_ref.id
 
-    def get_knowledge_files(self) -> List[Dict[str, Any]]:
-        """Retrieves all active knowledge base files."""
-        docs = self.db.collection("knowledge_base").order_by("created_at", direction=google_firestore.Query.DESCENDING).stream()
+    def get_knowledge_files(self, file_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieves all active knowledge base files, optionally filtered by type."""
+        # We fetch all and filter in memory to handle legacy documents without 'type' field
+        # defaulting to 'knowledge'. Also avoids index issues.
+        query = self.db.collection("knowledge_base").order_by("created_at", direction=google_firestore.Query.DESCENDING)
+        docs = query.stream()
+
         files = []
         for doc in docs:
             f = doc.to_dict()
             f["id"] = doc.id
+
+            # Backwards compatibility: If type is missing, assume 'knowledge'
+            current_type = f.get("type", "knowledge")
+            f["type"] = current_type
+
+            if file_type and current_type != file_type:
+                continue
+
             files.append(f)
         return files
 

@@ -15,7 +15,10 @@ class TestAgentCore(unittest.TestCase):
             # Mock genai.GenerativeModel
             with patch('google.generativeai.GenerativeModel') as MockModel:
                 agent = AgentCore()
-                MockModel.assert_called_with('gemini-2.5-flash')
+                MockModel.assert_called_with(
+                    model_name='gemini-2.5-flash',
+                    system_instruction=SYSTEM_PROMPT
+                )
                 self.assertIsNotNone(agent.model)
 
     def test_initialization_failure(self):
@@ -32,6 +35,10 @@ class TestAgentCore(unittest.TestCase):
         self.assertIn("LIMITES ABSOLUTOS", SYSTEM_PROMPT)
         self.assertIn("ÁRVORE DE DECISÃO INTERNA", SYSTEM_PROMPT)
         self.assertIn("Regular a ansiedade", SYSTEM_PROMPT)
+        self.assertIn("MAPA DO CURSO", SYSTEM_PROMPT)
+        self.assertIn("Módulo 1 (Mentalidade)", SYSTEM_PROMPT)
+        self.assertIn("Módulo 2 (Corretora - Bybit)", SYSTEM_PROMPT)
+        self.assertIn("Módulo 3 (Autocustódia - Phantom Wallet)", SYSTEM_PROMPT)
 
 if __name__ == '__main__':
     unittest.main()

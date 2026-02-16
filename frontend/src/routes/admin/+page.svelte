@@ -13,6 +13,7 @@
     let mode = 'crm'; // 'crm' | 'kb'
 
     // Knowledge Base State
+    let activeKbTab = 'knowledge'; // 'knowledge' | 'persona'
     let knowledgeFiles = [];
     let isLoadingFiles = false;
     let isUploading = false;
@@ -52,7 +53,7 @@
     async function fetchFiles() {
         isLoadingFiles = true;
         try {
-            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/files');
+            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/files?type=${activeKbTab}`);
             if (res.ok) {
                 knowledgeFiles = await res.json();
             } else {
@@ -65,6 +66,11 @@
         }
     }
 
+    function switchKbTab(tab) {
+        activeKbTab = tab;
+        fetchFiles();
+    }
+
     async function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -74,6 +80,7 @@
 
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('file_type', activeKbTab);
 
         try {
             const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/upload', {
@@ -393,7 +400,23 @@
                 <div class="flex justify-between items-start mb-8">
                     <div>
                         <h1 class="text-2xl font-bold tracking-tight text-white mb-2">Base de Conhecimento Dinâmica</h1>
-                        <p class="text-sm text-gray-400">Gerencie os documentos que alimentam a inteligência do agente.</p>
+                        <p class="text-sm text-gray-400 mb-4">Gerencie os documentos que alimentam a inteligência do agente.</p>
+
+                        <!-- KB Tabs -->
+                        <div class="flex space-x-1 bg-black/20 p-1 rounded-lg inline-flex">
+                            <button
+                                class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'knowledge' ? 'bg-dolarize-blue-glow/20 text-white shadow ring-1 ring-dolarize-blue-glow/50' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                on:click={() => switchKbTab('knowledge')}
+                            >
+                                Base de Conhecimento
+                            </button>
+                            <button
+                                class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'persona' ? 'bg-purple-900/40 text-purple-200 shadow ring-1 ring-purple-500/50' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                on:click={() => switchKbTab('persona')}
+                            >
+                                Centro de Personalidade
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Upload Component -->
@@ -409,7 +432,7 @@
                         >
                         <label
                             for="fileUpload"
-                            class={`cursor-pointer bg-dolarize-gold text-dolarize-dark font-bold uppercase tracking-wide text-xs px-4 py-2.5 rounded hover:bg-white transition-colors flex items-center gap-2 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            class={`cursor-pointer font-bold uppercase tracking-wide text-xs px-4 py-2.5 rounded hover:bg-white transition-colors flex items-center gap-2 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''} ${activeKbTab === 'persona' ? 'bg-purple-500 text-white hover:text-purple-900' : 'bg-dolarize-gold text-dolarize-dark'}`}
                         >
                             {#if isUploading}
                                 <svg class="animate-spin h-4 w-4 text-dolarize-dark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -444,7 +467,7 @@
                 <!-- File List -->
                 <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
                     <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-white uppercase tracking-wide">Arquivos Ativos</h3>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wide">Arquivos de {activeKbTab === 'persona' ? 'Personalidade' : 'Conhecimento'}</h3>
                         <span class="text-xs text-gray-400">{knowledgeFiles.length} documentos indexados</span>
                     </div>
 
@@ -452,11 +475,19 @@
                         <div class="p-12 text-center text-gray-500 animate-pulse">Carregando arquivos...</div>
                     {:else if knowledgeFiles.length === 0}
                          <div class="p-12 text-center flex flex-col items-center justify-center text-gray-500">
-                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-4 opacity-30">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                            </svg>
-                             <p>Nenhum arquivo na base de conhecimento.</p>
-                             <p class="text-xs mt-1">Faça upload de documentos para treinar o agente.</p>
+                             {#if activeKbTab === 'persona'}
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-4 opacity-30 text-purple-400">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
+                                </svg>
+                                 <p>Nenhum arquivo de personalidade definido.</p>
+                                 <p class="text-xs mt-1">Faça upload de guias de estilo e tom de voz.</p>
+                             {:else}
+                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-4 opacity-30">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                </svg>
+                                 <p>Nenhum arquivo na base de conhecimento.</p>
+                                 <p class="text-xs mt-1">Faça upload de documentos para treinar o agente.</p>
+                             {/if}
                          </div>
                     {:else}
                         <div class="overflow-auto custom-scrollbar flex-1">

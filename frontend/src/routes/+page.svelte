@@ -1,156 +1,107 @@
 <script>
     import { onMount } from 'svelte';
-    import { fade, fly } from 'svelte/transition';
+    import ChatWidget from '$lib/components/ChatWidget.svelte';
 
-    let chatStarted = false; // New state variable
+    let currentTier = 'C';
+    let userId = "test-user-123"; // Default fallback
 
-    let messages = [
-        { sender: 'agent', text: 'Olá. Sou o André Digital. Estou aqui para ajudar você a organizar sua jornada financeira com estrutura e segurança.' },
-    ];
-    let newMessage = '';
-    let isLoading = false;
-    let currentTier = 'C'; // Default to Cold/Welcome
-    // Hardcoded user_id for now as per instructions
-    const USER_ID = "test-user-123";
+    onMount(() => {
+        // Generate or retrieve unique User ID
+        const storedUserId = localStorage.getItem('dolarize_user_id');
+        if (storedUserId) {
+            userId = storedUserId;
+        } else {
+            // Simple UUID generator fallback if crypto.randomUUID is not available
+            userId = crypto.randomUUID ? crypto.randomUUID() : 'user-' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('dolarize_user_id', userId);
+        }
+    });
 
     // Dynamic background based on tier
     $: backgroundClasses = (() => {
         switch (currentTier) {
-            case 'A': return 'bg-gradient-to-br from-dolarize-dark via-[#0F172A] to-dolarize-gold/10'; // Qualified: Subtle Gold Hint
-            case 'B': return 'bg-gradient-to-br from-dolarize-dark via-[#0F172A] to-dolarize-blue-glow/20'; // Education: Subtle Blue Hint
-            default: return 'bg-dolarize-dark'; // Cold: Standard Dark
+            case 'A': return 'bg-gradient-to-br from-dolarize-dark via-[#0F172A] to-dolarize-gold/10'; // Qualified
+            case 'B': return 'bg-gradient-to-br from-dolarize-dark via-[#0F172A] to-dolarize-blue-glow/20'; // Education
+            default: return 'bg-dolarize-dark'; // Cold
         }
     })();
-
-    async function sendMessage() {
-        if (newMessage.trim() === '' || isLoading) return;
-
-        const userMessage = newMessage;
-        messages = [...messages, { sender: 'user', text: userMessage }];
-        newMessage = '';
-        isLoading = true;
-
-        try {
-            const response = await fetch('https://dolarize-api-493794054971.us-central1.run.app/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    message: userMessage,
-                    user_id: USER_ID
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-
-            const data = await response.json();
-            messages = [...messages, { sender: 'agent', text: data.response }];
-
-            // Update UI state if tier is provided
-            if (data.user_tier) {
-                currentTier = data.user_tier;
-            }
-        } catch (error) {
-            console.error('Error sending message:', error);
-            messages = [...messages, { sender: 'agent', text: 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.' }];
-        } finally {
-            isLoading = false;
-        }
-    }
-
-    function handleKeydown(event) {
-        if (event.key === 'Enter') {
-            sendMessage();
-        }
-    }
-
-    let chatContainer;
-    $: if (messages && chatContainer) {
-        setTimeout(() => {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }, 0);
-    }
 </script>
 
-<div class={`flex flex-col h-screen text-white font-sans overflow-hidden transition-all duration-1000 ease-in-out ${backgroundClasses}`}>
-    {#if !chatStarted}
-        <!-- Landing Page View -->
-        <div in:fade={{ duration: 500 }} out:fade={{ duration: 300 }} class="flex-1 flex flex-col items-center justify-center p-6 text-center z-10">
-            <h1 class="text-4xl md:text-6xl font-bold text-white tracking-tight mb-6">Proteja seu patrimônio. Construa sua estrutura.</h1>
-            <p class="mt-4 text-xl text-gray-300 max-w-2xl mx-auto mb-12">Você está a um passo de falar com o André Digital. Inicie seu diagnóstico financeiro agora.</p>
-            <button
-                on:click={() => chatStarted = true}
-                class="bg-dolarize-gold text-dolarize-dark font-bold py-3 px-8 rounded-full shadow-lg hover:bg-yellow-500 transition-colors text-lg uppercase tracking-wide"
-            >
-                Iniciar Diagnóstico
-            </button>
-        </div>
-    {:else}
-        <!-- Chat View -->
-        <div in:fade={{ duration: 500 }} class="flex flex-col h-full w-full">
-            <!-- Header -->
-            <header class="flex items-center justify-between px-6 py-4 border-b border-dolarize-blue-glow/30 bg-dolarize-dark/95 backdrop-blur-sm sticky top-0 z-10">
-                <div class="flex flex-col">
-                    <h1 class="text-xl font-bold tracking-tight text-white">André Digital</h1>
-                    <span class="text-xs text-dolarize-gold uppercase tracking-widest font-semibold">Extensão Dólarize 2.0</span>
-                </div>
-                <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]"></div>
-            </header>
+<div class={`min-h-screen text-white font-sans transition-all duration-1000 ease-in-out ${backgroundClasses}`}>
+    <div class="max-w-7xl mx-auto px-6 py-12 lg:py-24">
 
-            <!-- Chat Area -->
-            <main class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6" bind:this={chatContainer}>
-                {#each messages as message}
-                    <div
-                        in:fly="{{ y: 20, duration: 300 }}"
-                        class={`flex w-full ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                        <div class={`
-                            max-w-[85%] md:max-w-[70%] p-4 rounded-lg shadow-lg relative
-                            ${message.sender === 'user'
-                                ? 'bg-transparent text-gray-200 text-right border border-gray-700/50'
-                                : 'bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold shadow-[0_4px_20px_rgba(0,0,0,0.2)]'
-                            }
-                        `}>
-                            <p class="leading-relaxed text-sm md:text-base">{message.text}</p>
-                        </div>
-                    </div>
-                {/each}
-                {#if isLoading}
-                    <div class="flex w-full justify-start" in:fade>
-                        <div class="bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold shadow-lg p-4 rounded-lg">
-                            <div class="flex space-x-2">
-                                <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce"></div>
-                                <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-100"></div>
-                                <div class="w-2 h-2 bg-dolarize-gold rounded-full animate-bounce delay-200"></div>
-                            </div>
-                        </div>
-                    </div>
-                {/if}
-            </main>
-
-            <!-- Input Area -->
-            <footer class="p-4 md:p-6 bg-dolarize-dark border-t border-dolarize-blue-glow/20">
-                <div class="relative max-w-4xl mx-auto">
-                    <input
-                        type="text"
-                        bind:value={newMessage}
-                        on:keydown={handleKeydown}
-                        placeholder="Digite sua mensagem aqui..."
-                        disabled={isLoading}
-                        class="w-full bg-dolarize-card text-white placeholder-gray-500 px-6 py-4 pr-24 rounded-lg focus:outline-none focus:ring-1 focus:ring-dolarize-gold/50 focus:border-dolarize-blue-glow/50 transition-all shadow-inner border border-gray-800 disabled:opacity-50"
-                    />
-                    <button
-                        on:click={sendMessage}
-                        class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 text-sm font-semibold text-dolarize-gold hover:text-white transition-colors uppercase tracking-wider disabled:opacity-50"
-                        disabled={!newMessage.trim() || isLoading}
-                    >
-                        Enviar
-                    </button>
+        <!-- Hero Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <!-- Left Column: Copy -->
+            <div class="flex flex-col space-y-8 text-center lg:text-left">
+                 <div class="inline-block px-4 py-1.5 rounded-full bg-dolarize-gold/10 border border-dolarize-gold/20 text-dolarize-gold text-sm font-semibold tracking-wider uppercase self-center lg:self-start mb-4">
+                    Imersão Dólarize 2.0
                 </div>
-            </footer>
+                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight tracking-tight">
+                    Proteja seu patrimônio da <span class="text-transparent bg-clip-text bg-gradient-to-r from-dolarize-gold to-yellow-200">inflação.</span>
+                </h1>
+                <p class="text-lg md:text-xl text-gray-300 leading-relaxed max-w-2xl mx-auto lg:mx-0">
+                    Converse com nosso Agente de Inteligência Artificial para descobrir sua estratégia ideal de autocustódia e segurança financeira.
+                </p>
+
+                 <!-- Mobile Call to Action Arrow (Visual cue) -->
+                 <div class="lg:hidden flex justify-center text-dolarize-gold animate-bounce pt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Right Column: Chat Widget -->
+            <div class="w-full max-w-lg mx-auto lg:max-w-none lg:mx-0 shadow-2xl rounded-2xl">
+                 <ChatWidget bind:currentTier userId={userId} />
+            </div>
         </div>
-    {/if}
+
+        <!-- Value Proposition Section -->
+        <div class="mt-24 lg:mt-32 grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Benefit 1: Segurança -->
+            <div class="bg-dolarize-card/50 backdrop-blur-sm p-8 rounded-2xl border border-white/5 hover:border-dolarize-gold/30 transition-all duration-300 hover:-translate-y-1">
+                <div class="w-12 h-12 bg-dolarize-gold/10 rounded-xl flex items-center justify-center mb-6 text-dolarize-gold">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-3">Segurança</h3>
+                <p class="text-gray-400 leading-relaxed">
+                    Proteja seu capital contra riscos sistêmicos e inflação com estratégias validadas.
+                </p>
+            </div>
+
+            <!-- Benefit 2: Autocustódia -->
+            <div class="bg-dolarize-card/50 backdrop-blur-sm p-8 rounded-2xl border border-white/5 hover:border-dolarize-gold/30 transition-all duration-300 hover:-translate-y-1">
+                <div class="w-12 h-12 bg-dolarize-blue-glow/10 rounded-xl flex items-center justify-center mb-6 text-dolarize-blue-glow">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-3">Autocustódia</h3>
+                <p class="text-gray-400 leading-relaxed">
+                    Tenha controle total sobre seus ativos. Sem intermediários, sem bloqueios.
+                </p>
+            </div>
+
+            <!-- Benefit 3: Liberdade -->
+            <div class="bg-dolarize-card/50 backdrop-blur-sm p-8 rounded-2xl border border-white/5 hover:border-dolarize-gold/30 transition-all duration-300 hover:-translate-y-1">
+                <div class="w-12 h-12 bg-green-500/10 rounded-xl flex items-center justify-center mb-6 text-green-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6.115 5.19l.319 1.913A6 6 0 008.11 10.36L9.75 12l-.387.775c-.217.433-.132.956.21 1.298l1.348 1.348c.21.21.329.497.329.795v1.089c0 .426.24.815.622 1.006l.153.076c.433.217.956.132 1.298-.21l.723-.723a8.7 8.7 0 002.288-4.042 3.104 3.104 0 00-.21-2.87l-.837-1.675a.6.6 0 01.18-.738l.231-.173c.43-.323.902-.51 1.386-.543 1.102-.072 2.39.223 3.535 1.256 1.485 1.335 1.62 3.68.299 5.34l-.531.665c-.734.92-1.604 2.334-2.508 5.318a6 6 0 00-.403 2.13.04.04 0 00.04.04h4.743a.04.04 0 00.04-.04c.037-.96.09-2.013.3-2.992.547-2.561 2.29-4.938 4.29-6.31M15 20.25h.008v.008H15v-.008zM6.75 15.75h.008v.008H6.75v-.008z" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-3">Liberdade</h3>
+                <p class="text-gray-400 leading-relaxed">
+                    Opere globalmente e acesse oportunidades que antes eram exclusivas.
+                </p>
+            </div>
+        </div>
+
+         <footer class="mt-24 text-center text-gray-500 text-sm">
+            &copy; 2024 Dólarize 2.0. Todos os direitos reservados.
+        </footer>
+    </div>
 </div>

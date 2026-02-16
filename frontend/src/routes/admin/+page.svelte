@@ -9,6 +9,16 @@
     let isLoadingHistory = false;
     let dashboardStats = null;
 
+    // CRM vs KB Mode
+    let mode = 'crm'; // 'crm' | 'kb'
+
+    // Knowledge Base State
+    let knowledgeFiles = [];
+    let isLoadingFiles = false;
+    let isUploading = false;
+    let uploadStatus = ''; // 'success', 'error', ''
+    let fileInput;
+
     onMount(async () => {
         try {
             const [usersRes, statsRes] = await Promise.all([
@@ -33,6 +43,78 @@
             isLoadingUsers = false;
         }
     });
+
+    // Fetch files when switching to KB mode
+    $: if (mode === 'kb') {
+        fetchFiles();
+    }
+
+    async function fetchFiles() {
+        isLoadingFiles = true;
+        try {
+            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/files');
+            if (res.ok) {
+                knowledgeFiles = await res.json();
+            } else {
+                console.error("Failed to fetch files");
+            }
+        } catch (e) {
+            console.error("Error fetching files:", e);
+        } finally {
+            isLoadingFiles = false;
+        }
+    }
+
+    async function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        isUploading = true;
+        uploadStatus = '';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                uploadStatus = 'success';
+                await fetchFiles(); // Refresh list
+            } else {
+                uploadStatus = 'error';
+                console.error("Upload failed");
+            }
+        } catch (e) {
+            console.error("Upload error:", e);
+            uploadStatus = 'error';
+        } finally {
+            isUploading = false;
+            if (fileInput) fileInput.value = ''; // Reset input
+        }
+    }
+
+    async function deleteFile(fileId) {
+        if (!confirm('Tem certeza que deseja excluir este arquivo? A IA deixará de utilizá-lo.')) return;
+
+        try {
+            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/files/${fileId}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                await fetchFiles();
+            } else {
+                alert("Erro ao excluir arquivo.");
+            }
+        } catch (e) {
+            console.error("Delete error:", e);
+            alert("Erro ao excluir arquivo.");
+        }
+    }
 
     async function selectUser(user) {
         selectedUser = user;
@@ -74,209 +156,356 @@
 <div class="flex h-screen bg-dolarize-dark text-white font-sans overflow-hidden">
     <!-- Sidebar / Master View -->
     <aside class="w-1/3 min-w-[300px] border-r border-dolarize-blue-glow/20 bg-dolarize-dark/95 flex flex-col">
-        <div class="p-6 border-b border-dolarize-blue-glow/20 cursor-pointer hover:bg-white/5 transition-colors group" on:click={() => selectedUser = null}>
-            <div class="flex items-center gap-2">
-                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-dolarize-gold group-hover:scale-110 transition-transform">
+        <div class="p-6 border-b border-dolarize-blue-glow/20">
+            <div class="flex items-center gap-2 mb-4 cursor-pointer" on:click={() => { selectedUser = null; mode = 'crm'; }}>
+                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-dolarize-gold">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
                 </svg>
-                <h1 class="text-xl font-bold tracking-tight text-white">CRM Admin</h1>
+                <h1 class="text-xl font-bold tracking-tight text-white">Admin Console</h1>
             </div>
-            <span class="text-xs text-dolarize-gold uppercase tracking-widest font-semibold ml-7">Dólarize 2.0</span>
+
+            <!-- Navigation Tabs -->
+            <div class="flex space-x-1 bg-black/20 p-1 rounded-lg">
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'crm' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'crm'; selectedUser = null; }}
+                >
+                    CRM
+                </button>
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'kb' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'kb'; selectedUser = null; }}
+                >
+                    Conhecimento
+                </button>
+            </div>
         </div>
 
         <div class="flex-1 overflow-y-auto custom-scrollbar">
-            {#if isLoadingUsers}
-                <div class="p-6 text-center text-gray-500 animate-pulse">Carregando leads...</div>
-            {:else if users.length === 0}
-                <div class="p-6 text-center text-gray-500">Nenhum usuário encontrado.</div>
-            {:else}
-                <ul class="divide-y divide-gray-800/50">
-                    {#each users as user}
-                        <li>
-                            <button
-                                class={`w-full text-left p-4 hover:bg-white/5 transition-colors ${selectedUser?.id === user.id ? 'bg-white/5 border-l-4 border-dolarize-gold' : 'border-l-4 border-transparent'}`}
-                                on:click={() => selectUser(user)}
-                            >
-                                <div class="flex justify-between items-start mb-1">
-                                    <span class="font-semibold text-white truncate pr-2">{user.nome || 'Usuário Sem Nome'}</span>
-                                    <span class={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
-                                        user.classificacao_lead?.startsWith('A') ? 'border-green-500/50 text-green-400 bg-green-900/20' :
-                                        user.classificacao_lead?.startsWith('B') ? 'border-yellow-500/50 text-yellow-400 bg-yellow-900/20' :
-                                        'border-gray-500/50 text-gray-400 bg-gray-900/20'
-                                    }`}>
-                                        {user.classificacao_lead ? user.classificacao_lead.split(' - ')[0] : 'N/A'}
-                                    </span>
-                                </div>
-                                <div class="text-xs text-gray-400 mb-2 font-mono opacity-70">ID: {user.id}</div>
-                                {#if user.tags && user.tags.length > 0}
-                                    <div class="flex flex-wrap gap-1">
-                                        {#each user.tags as tag}
-                                            <span class="text-[10px] px-1.5 py-0.5 bg-dolarize-blue-glow/10 text-blue-200 rounded border border-dolarize-blue-glow/20">#{tag}</span>
-                                        {/each}
+            {#if mode === 'crm'}
+                {#if isLoadingUsers}
+                    <div class="p-6 text-center text-gray-500 animate-pulse">Carregando leads...</div>
+                {:else if users.length === 0}
+                    <div class="p-6 text-center text-gray-500">Nenhum usuário encontrado.</div>
+                {:else}
+                    <ul class="divide-y divide-gray-800/50">
+                        {#each users as user}
+                            <li>
+                                <button
+                                    class={`w-full text-left p-4 hover:bg-white/5 transition-colors ${selectedUser?.id === user.id ? 'bg-white/5 border-l-4 border-dolarize-gold' : 'border-l-4 border-transparent'}`}
+                                    on:click={() => selectUser(user)}
+                                >
+                                    <div class="flex justify-between items-start mb-1">
+                                        <span class="font-semibold text-white truncate pr-2">{user.nome || 'Usuário Sem Nome'}</span>
+                                        <span class={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
+                                            user.classificacao_lead?.startsWith('A') ? 'border-green-500/50 text-green-400 bg-green-900/20' :
+                                            user.classificacao_lead?.startsWith('B') ? 'border-yellow-500/50 text-yellow-400 bg-yellow-900/20' :
+                                            'border-gray-500/50 text-gray-400 bg-gray-900/20'
+                                        }`}>
+                                            {user.classificacao_lead ? user.classificacao_lead.split(' - ')[0] : 'N/A'}
+                                        </span>
                                     </div>
-                                {/if}
-                            </button>
-                        </li>
-                    {/each}
-                </ul>
+                                    <div class="text-xs text-gray-400 mb-2 font-mono opacity-70">ID: {user.id}</div>
+                                    {#if user.tags && user.tags.length > 0}
+                                        <div class="flex flex-wrap gap-1">
+                                            {#each user.tags as tag}
+                                                <span class="text-[10px] px-1.5 py-0.5 bg-dolarize-blue-glow/10 text-blue-200 rounded border border-dolarize-blue-glow/20">#{tag}</span>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </button>
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            {:else}
+                <!-- Knowledge Base Info -->
+                <div class="p-6 text-sm text-gray-400 space-y-4">
+                    <p>Gerencie aqui os arquivos que compõem o "cérebro" do André Digital.</p>
+                    <p>O agente consultará estes documentos para responder perguntas técnicas.</p>
+                    <div class="bg-blue-900/20 border border-blue-500/30 p-3 rounded text-xs text-blue-200">
+                        Arquivos suportados: PDF, DOCX, TXT.
+                    </div>
+                </div>
             {/if}
         </div>
     </aside>
 
     <!-- Main Content / Detail View -->
     <main class="flex-1 flex flex-col bg-dolarize-dark relative">
-        {#if selectedUser}
-            <!-- User Header -->
-            <header class="px-6 py-4 border-b border-dolarize-blue-glow/20 bg-dolarize-dark/95 backdrop-blur-sm flex justify-between items-center z-10">
-                <div>
-                    <h2 class="text-lg font-bold text-white tracking-tight">{selectedUser.nome || 'Usuário'}</h2>
-                    <p class="text-sm text-gray-400">{selectedUser.telefone || 'Sem telefone'}</p>
-                </div>
-                <div class="text-right">
-                     <div class="text-[10px] text-dolarize-gold uppercase tracking-widest font-semibold mb-1">Nível de Acesso</div>
-                     <div class="text-sm text-gray-300 font-medium">{selectedUser.nivel_acesso || 'Desconhecido'}</div>
-                </div>
-            </header>
+        {#if mode === 'crm'}
+            {#if selectedUser}
+                <!-- User Header -->
+                <header class="px-6 py-4 border-b border-dolarize-blue-glow/20 bg-dolarize-dark/95 backdrop-blur-sm flex justify-between items-center z-10">
+                    <div>
+                        <h2 class="text-lg font-bold text-white tracking-tight">{selectedUser.nome || 'Usuário'}</h2>
+                        <p class="text-sm text-gray-400">{selectedUser.telefone || 'Sem telefone'}</p>
+                    </div>
+                    <div class="text-right">
+                         <div class="text-[10px] text-dolarize-gold uppercase tracking-widest font-semibold mb-1">Nível de Acesso</div>
+                         <div class="text-sm text-gray-300 font-medium">{selectedUser.nivel_acesso || 'Desconhecido'}</div>
+                    </div>
+                </header>
 
-            <!-- Chat History -->
-            <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-                {#if isLoadingHistory}
-                    <div class="flex items-center justify-center h-full">
-                        <div class="text-center text-gray-500 animate-pulse">Carregando histórico...</div>
-                    </div>
-                {:else if chatHistory.length === 0}
-                    <div class="flex items-center justify-center h-full">
-                        <div class="text-center text-gray-600">Nenhuma interação registrada.</div>
-                    </div>
-                {:else}
-                    {#each chatHistory as msg}
-                         <div class={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`} in:fade>
-                            <div class={`
-                                max-w-[80%] p-4 rounded-lg text-sm shadow-md relative
-                                ${msg.role === 'user'
-                                    ? 'bg-dolarize-blue-glow/10 text-gray-200 border border-dolarize-blue-glow/30 rounded-tr-none'
-                                    : 'bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold rounded-tl-none'
-                                }
-                            `}>
-                                <div class="flex justify-between items-center mb-2 pb-2 border-b border-white/5 gap-4">
-                                    <span class="text-[10px] opacity-70 uppercase tracking-wider font-bold">
-                                        {msg.role === 'user' ? 'Lead' : 'André Digital'}
-                                    </span>
-                                    {#if msg.timestamp}
-                                        <span class="text-[10px] opacity-40 font-mono">
-                                            {new Date(msg.timestamp).toLocaleString()}
+                <!-- Chat History -->
+                <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                    {#if isLoadingHistory}
+                        <div class="flex items-center justify-center h-full">
+                            <div class="text-center text-gray-500 animate-pulse">Carregando histórico...</div>
+                        </div>
+                    {:else if chatHistory.length === 0}
+                        <div class="flex items-center justify-center h-full">
+                            <div class="text-center text-gray-600">Nenhuma interação registrada.</div>
+                        </div>
+                    {:else}
+                        {#each chatHistory as msg}
+                             <div class={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`} in:fade>
+                                <div class={`
+                                    max-w-[80%] p-4 rounded-lg text-sm shadow-md relative
+                                    ${msg.role === 'user'
+                                        ? 'bg-dolarize-blue-glow/10 text-gray-200 border border-dolarize-blue-glow/30 rounded-tr-none'
+                                        : 'bg-dolarize-card text-gray-100 border-l-2 border-dolarize-gold rounded-tl-none'
+                                    }
+                                `}>
+                                    <div class="flex justify-between items-center mb-2 pb-2 border-b border-white/5 gap-4">
+                                        <span class="text-[10px] opacity-70 uppercase tracking-wider font-bold">
+                                            {msg.role === 'user' ? 'Lead' : 'André Digital'}
                                         </span>
-                                    {/if}
+                                        {#if msg.timestamp}
+                                            <span class="text-[10px] opacity-40 font-mono">
+                                                {new Date(msg.timestamp).toLocaleString()}
+                                            </span>
+                                        {/if}
+                                    </div>
+                                    <p class="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                                 </div>
-                                <p class="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                            </div>
+                        {/each}
+                    {/if}
+                </div>
+            {:else}
+                <!-- Executive Dashboard -->
+                <div class="flex-1 flex flex-col p-6 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
+                    <div class="mb-8">
+                        <h1 class="text-2xl font-bold tracking-tight text-white mb-2">Painel Executivo</h1>
+                        <p class="text-sm text-gray-400">Visão geral de desempenho e leads</p>
+                    </div>
+
+                    <!-- KPI Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <!-- Total Leads -->
+                        <div class="bg-dolarize-card p-6 rounded-lg border border-dolarize-blue-glow/20 relative overflow-hidden shadow-lg">
+                            <div class="absolute top-0 right-0 p-4 opacity-10">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                            </div>
+                            <h3 class="text-xs font-semibold text-dolarize-gold uppercase tracking-wider mb-1">Total de Leads</h3>
+                            <div class="text-3xl font-bold text-white">{dashboardStats ? dashboardStats.total_leads : '...'}</div>
+                        </div>
+
+                        <!-- Conversion Rate -->
+                        <div class="bg-dolarize-card p-6 rounded-lg border border-dolarize-blue-glow/20 relative overflow-hidden shadow-lg">
+                            <div class="absolute top-0 right-0 p-4 opacity-10">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                            </div>
+                            <h3 class="text-xs font-semibold text-dolarize-gold uppercase tracking-wider mb-1">Conversão (Perfil A)</h3>
+                            <div class="text-3xl font-bold text-white">{dashboardStats ? dashboardStats.conversion_rate_a + '%' : '...'}</div>
+                        </div>
+
+                        <!-- Funnel Distribution -->
+                        <div class="bg-dolarize-card p-6 rounded-lg border border-dolarize-blue-glow/20 relative overflow-hidden shadow-lg">
+                             <div class="absolute top-0 right-0 p-4 opacity-10">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                            </div>
+                            <h3 class="text-xs font-semibold text-dolarize-gold uppercase tracking-wider mb-1">Distribuição do Funil</h3>
+                            <div class="flex items-end space-x-4 text-sm mt-2">
+                                <div class="flex flex-col items-center">
+                                    <span class="text-green-400 font-bold text-lg">{dashboardStats ? dashboardStats.funnel_distribution.A : 0}</span>
+                                    <span class="text-[10px] text-gray-500 font-bold">A</span>
+                                </div>
+                                <div class="w-px h-8 bg-gray-700/50"></div>
+                                <div class="flex flex-col items-center">
+                                    <span class="text-yellow-400 font-bold text-lg">{dashboardStats ? dashboardStats.funnel_distribution.B : 0}</span>
+                                    <span class="text-[10px] text-gray-500 font-bold">B</span>
+                                </div>
+                                <div class="w-px h-8 bg-gray-700/50"></div>
+                                <div class="flex flex-col items-center">
+                                    <span class="text-gray-400 font-bold text-lg">{dashboardStats ? dashboardStats.funnel_distribution.C : 0}</span>
+                                    <span class="text-[10px] text-gray-500 font-bold">C</span>
+                                </div>
                             </div>
                         </div>
-                    {/each}
-                {/if}
-            </div>
+                    </div>
+
+                    <!-- Lead Management Grid -->
+                    <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
+                        <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wide">Gerenciamento de Leads</h3>
+                            <span class="text-xs text-gray-400">{users.length} leads encontrados</span>
+                        </div>
+                        <div class="overflow-auto custom-scrollbar flex-1">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-black/20 text-xs text-gray-400 uppercase font-semibold sticky top-0 z-10 backdrop-blur-sm">
+                                    <tr>
+                                        <th class="p-4 border-b border-white/5">Lead</th>
+                                        <th class="p-4 border-b border-white/5">Status</th>
+                                        <th class="p-4 border-b border-white/5 hidden md:table-cell">Dor Principal</th>
+                                        <th class="p-4 border-b border-white/5 hidden md:table-cell">Maturidade</th>
+                                        <th class="p-4 border-b border-white/5 text-right">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-white/5 text-sm">
+                                    {#each users as user}
+                                    <tr class="hover:bg-white/5 transition-colors group">
+                                        <td class="p-4 font-medium text-white">
+                                            <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{user.nome || 'Sem Nome'}</div>
+                                            <div class="text-[10px] text-gray-500 font-mono">{user.id.substring(0, 8)}...</div>
+                                        </td>
+                                        <td class="p-4">
+                                            <span class={`text-[10px] uppercase font-bold px-2 py-1 rounded-full border shadow-sm ${
+                                                user.classificacao_lead?.startsWith('A') ? 'border-green-500/50 text-green-300 bg-green-900/30' :
+                                                user.classificacao_lead?.startsWith('B') ? 'border-yellow-500/50 text-yellow-300 bg-yellow-900/20' :
+                                                'border-gray-500/50 text-gray-400 bg-gray-800/50'
+                                            }`}>
+                                                {user.classificacao_lead ? user.classificacao_lead.split(' - ')[0] : 'N/A'}
+                                            </span>
+                                        </td>
+                                        <td class="p-4 text-gray-400 hidden md:table-cell max-w-[150px] truncate" title={user.dor_principal}>{user.dor_principal || '-'}</td>
+                                        <td class="p-4 text-gray-400 hidden md:table-cell capitalize">{user.maturidade || '-'}</td>
+                                        <td class="p-4 text-right">
+                                            <button
+                                                class="text-[10px] font-bold text-dolarize-gold hover:text-white uppercase tracking-wider px-3 py-1.5 border border-dolarize-gold/30 rounded hover:bg-dolarize-gold/10 transition-all hover:border-dolarize-gold/80"
+                                                on:click={() => selectUser(user)}
+                                            >
+                                                Inspecionar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            {/if}
         {:else}
-            <!-- Executive Dashboard -->
-            <div class="flex-1 flex flex-col p-6 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
-                <div class="mb-8">
-                    <h1 class="text-2xl font-bold tracking-tight text-white mb-2">Painel Executivo</h1>
-                    <p class="text-sm text-gray-400">Visão geral de desempenho e leads</p>
-                </div>
-
-                <!-- KPI Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <!-- Total Leads -->
-                    <div class="bg-dolarize-card p-6 rounded-lg border border-dolarize-blue-glow/20 relative overflow-hidden shadow-lg">
-                        <div class="absolute top-0 right-0 p-4 opacity-10">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                        </div>
-                        <h3 class="text-xs font-semibold text-dolarize-gold uppercase tracking-wider mb-1">Total de Leads</h3>
-                        <div class="text-3xl font-bold text-white">{dashboardStats ? dashboardStats.total_leads : '...'}</div>
+            <!-- Knowledge Base Mode -->
+             <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
+                <div class="flex justify-between items-start mb-8">
+                    <div>
+                        <h1 class="text-2xl font-bold tracking-tight text-white mb-2">Base de Conhecimento Dinâmica</h1>
+                        <p class="text-sm text-gray-400">Gerencie os documentos que alimentam a inteligência do agente.</p>
                     </div>
 
-                    <!-- Conversion Rate -->
-                    <div class="bg-dolarize-card p-6 rounded-lg border border-dolarize-blue-glow/20 relative overflow-hidden shadow-lg">
-                        <div class="absolute top-0 right-0 p-4 opacity-10">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                        </div>
-                        <h3 class="text-xs font-semibold text-dolarize-gold uppercase tracking-wider mb-1">Conversão (Perfil A)</h3>
-                        <div class="text-3xl font-bold text-white">{dashboardStats ? dashboardStats.conversion_rate_a + '%' : '...'}</div>
-                    </div>
-
-                    <!-- Funnel Distribution -->
-                    <div class="bg-dolarize-card p-6 rounded-lg border border-dolarize-blue-glow/20 relative overflow-hidden shadow-lg">
-                         <div class="absolute top-0 right-0 p-4 opacity-10">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                        </div>
-                        <h3 class="text-xs font-semibold text-dolarize-gold uppercase tracking-wider mb-1">Distribuição do Funil</h3>
-                        <div class="flex items-end space-x-4 text-sm mt-2">
-                            <div class="flex flex-col items-center">
-                                <span class="text-green-400 font-bold text-lg">{dashboardStats ? dashboardStats.funnel_distribution.A : 0}</span>
-                                <span class="text-[10px] text-gray-500 font-bold">A</span>
-                            </div>
-                            <div class="w-px h-8 bg-gray-700/50"></div>
-                            <div class="flex flex-col items-center">
-                                <span class="text-yellow-400 font-bold text-lg">{dashboardStats ? dashboardStats.funnel_distribution.B : 0}</span>
-                                <span class="text-[10px] text-gray-500 font-bold">B</span>
-                            </div>
-                            <div class="w-px h-8 bg-gray-700/50"></div>
-                            <div class="flex flex-col items-center">
-                                <span class="text-gray-400 font-bold text-lg">{dashboardStats ? dashboardStats.funnel_distribution.C : 0}</span>
-                                <span class="text-[10px] text-gray-500 font-bold">C</span>
-                            </div>
-                        </div>
+                    <!-- Upload Component -->
+                    <div class="flex items-center gap-4">
+                         <input
+                            type="file"
+                            id="fileUpload"
+                            class="hidden"
+                            accept=".pdf,.docx,.txt"
+                            bind:this={fileInput}
+                            on:change={handleFileUpload}
+                            disabled={isUploading}
+                        >
+                        <label
+                            for="fileUpload"
+                            class={`cursor-pointer bg-dolarize-gold text-dolarize-dark font-bold uppercase tracking-wide text-xs px-4 py-2.5 rounded hover:bg-white transition-colors flex items-center gap-2 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            {#if isUploading}
+                                <svg class="animate-spin h-4 w-4 text-dolarize-dark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span>Enviando...</span>
+                            {:else}
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                </svg>
+                                <span>Upload de Arquivo</span>
+                            {/if}
+                        </label>
                     </div>
                 </div>
 
-                <!-- Lead Management Grid -->
+                {#if uploadStatus === 'success'}
+                    <div class="mb-6 p-3 bg-green-900/20 border border-green-500/30 text-green-400 text-sm rounded flex items-center gap-2" in:fade>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                        Arquivo enviado e indexado com sucesso. O agente já está atualizado.
+                    </div>
+                {/if}
+
+                {#if uploadStatus === 'error'}
+                     <div class="mb-6 p-3 bg-red-900/20 border border-red-500/30 text-red-400 text-sm rounded flex items-center gap-2" in:fade>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                        Erro ao enviar arquivo. Verifique se o formato é suportado e tente novamente.
+                    </div>
+                {/if}
+
+                <!-- File List -->
                 <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
                     <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-white uppercase tracking-wide">Gerenciamento de Leads</h3>
-                        <span class="text-xs text-gray-400">{users.length} leads encontrados</span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wide">Arquivos Ativos</h3>
+                        <span class="text-xs text-gray-400">{knowledgeFiles.length} documentos indexados</span>
                     </div>
-                    <div class="overflow-auto custom-scrollbar flex-1">
-                        <table class="w-full text-left border-collapse">
-                            <thead class="bg-black/20 text-xs text-gray-400 uppercase font-semibold sticky top-0 z-10 backdrop-blur-sm">
-                                <tr>
-                                    <th class="p-4 border-b border-white/5">Lead</th>
-                                    <th class="p-4 border-b border-white/5">Status</th>
-                                    <th class="p-4 border-b border-white/5 hidden md:table-cell">Dor Principal</th>
-                                    <th class="p-4 border-b border-white/5 hidden md:table-cell">Maturidade</th>
-                                    <th class="p-4 border-b border-white/5 text-right">Ação</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-white/5 text-sm">
-                                {#each users as user}
-                                <tr class="hover:bg-white/5 transition-colors group">
-                                    <td class="p-4 font-medium text-white">
-                                        <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{user.nome || 'Sem Nome'}</div>
-                                        <div class="text-[10px] text-gray-500 font-mono">{user.id.substring(0, 8)}...</div>
-                                    </td>
-                                    <td class="p-4">
-                                        <span class={`text-[10px] uppercase font-bold px-2 py-1 rounded-full border shadow-sm ${
-                                            user.classificacao_lead?.startsWith('A') ? 'border-green-500/50 text-green-300 bg-green-900/30' :
-                                            user.classificacao_lead?.startsWith('B') ? 'border-yellow-500/50 text-yellow-300 bg-yellow-900/30' :
-                                            'border-gray-500/50 text-gray-400 bg-gray-800/50'
-                                        }`}>
-                                            {user.classificacao_lead ? user.classificacao_lead.split(' - ')[0] : 'N/A'}
-                                        </span>
-                                    </td>
-                                    <td class="p-4 text-gray-400 hidden md:table-cell max-w-[150px] truncate" title={user.dor_principal}>{user.dor_principal || '-'}</td>
-                                    <td class="p-4 text-gray-400 hidden md:table-cell capitalize">{user.maturidade || '-'}</td>
-                                    <td class="p-4 text-right">
-                                        <button
-                                            class="text-[10px] font-bold text-dolarize-gold hover:text-white uppercase tracking-wider px-3 py-1.5 border border-dolarize-gold/30 rounded hover:bg-dolarize-gold/10 transition-all hover:border-dolarize-gold/80"
-                                            on:click={() => selectUser(user)}
-                                        >
-                                            Inspecionar
-                                        </button>
-                                    </td>
-                                </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
+
+                    {#if isLoadingFiles}
+                        <div class="p-12 text-center text-gray-500 animate-pulse">Carregando arquivos...</div>
+                    {:else if knowledgeFiles.length === 0}
+                         <div class="p-12 text-center flex flex-col items-center justify-center text-gray-500">
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-4 opacity-30">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                            </svg>
+                             <p>Nenhum arquivo na base de conhecimento.</p>
+                             <p class="text-xs mt-1">Faça upload de documentos para treinar o agente.</p>
+                         </div>
+                    {:else}
+                        <div class="overflow-auto custom-scrollbar flex-1">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-black/20 text-xs text-gray-400 uppercase font-semibold sticky top-0 z-10 backdrop-blur-sm">
+                                    <tr>
+                                        <th class="p-4 border-b border-white/5">Arquivo</th>
+                                        <th class="p-4 border-b border-white/5">Tipo</th>
+                                        <th class="p-4 border-b border-white/5">Tamanho</th>
+                                        <th class="p-4 border-b border-white/5">Data Envio</th>
+                                        <th class="p-4 border-b border-white/5 text-right">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-white/5 text-sm">
+                                    {#each knowledgeFiles as file}
+                                    <tr class="hover:bg-white/5 transition-colors group">
+                                        <td class="p-4 font-medium text-white flex items-center gap-3">
+                                            <div class="p-2 bg-dolarize-blue-glow/10 rounded text-blue-300">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{file.display_name}</div>
+                                                <div class="text-[10px] text-gray-500 font-mono">{file.name}</div>
+                                            </div>
+                                        </td>
+                                        <td class="p-4 text-gray-400 text-xs uppercase tracking-wide">{file.mime_type?.split('/')[1] || 'DOC'}</td>
+                                        <td class="p-4 text-gray-400 font-mono text-xs">{(file.size_bytes / 1024).toFixed(1)} KB</td>
+                                        <td class="p-4 text-gray-400 font-mono text-xs">{new Date(file.created_at).toLocaleDateString()}</td>
+                                        <td class="p-4 text-right">
+                                            <button
+                                                class="text-red-400 hover:text-red-200 hover:bg-red-900/30 p-2 rounded transition-colors"
+                                                title="Excluir Arquivo"
+                                                on:click={() => deleteFile(file.id)}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                </svg>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        </div>
+                    {/if}
                 </div>
-            </div>
+             </div>
         {/if}
     </main>
 </div>

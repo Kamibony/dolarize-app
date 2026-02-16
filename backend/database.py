@@ -69,6 +69,22 @@ class FirestoreClient:
             update_data, merge=True
         )
 
+    def update_user_contact_info(self, user_id: str, name: Optional[str] = None, email: Optional[str] = None) -> None:
+        """
+        Updates the user's name and/or email if provided.
+        Only updates if the values are not None.
+        """
+        update_data = {}
+        if name:
+            update_data["nome"] = name
+        if email:
+            update_data["email"] = email
+
+        if update_data:
+            self.db.collection("usuarios").document(user_id).set(
+                update_data, merge=True
+            )
+
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Retrieves a user profile by ID."""
         doc_ref = self.db.collection("usuarios").document(user_id)

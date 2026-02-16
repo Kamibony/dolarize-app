@@ -36,10 +36,23 @@ class ChatResponse(BaseModel):
     response: str
     user_tier: str
 
-def run_lead_qualification(user_id: str, history: List[Dict[str, Any]]):
+def process_background_tasks(user_id: str, message: str, history: List[Dict[str, Any]]):
     """
-    Background task to analyze lead qualification and update user profile.
+    Background task to handle entity extraction and lead qualification.
     """
+    # 1. Entity Extraction
+    try:
+        contact_info = agent.extract_contact_info(message)
+        if contact_info and (contact_info.get("nome") or contact_info.get("email")):
+            db.update_user_contact_info(
+                user_id,
+                name=contact_info.get("nome"),
+                email=contact_info.get("email")
+            )
+    except Exception as e:
+        print(f"Error in background entity extraction: {e}")
+
+    # 2. Lead Qualification
     try:
         analysis = agent.analyze_lead_qualification(history)
         if analysis:
@@ -96,19 +109,12 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         gemini_history.append({"role": "user", "parts": [request.message]})
         gemini_history.append({"role": "model", "parts": [response_text]})
 
-        analysis = agent.analyze_lead_qualification(gemini_history)
-        current_classification = ""
+        # Add background tasks for Entity Extraction and Lead Qualification
+        background_tasks.add_task(process_background_tasks, request.user_id, request.message, gemini_history)
 
-        if analysis:
-            # Merge ID into analysis to save
-            analysis["id"] = request.user_id
-            db.save_user(analysis)
-            current_classification = analysis.get("classificacao_lead", "")
-        else:
-            # Fallback to existing user data if analysis fails
-            user_data = db.get_user(request.user_id)
-            if user_data:
-                current_classification = user_data.get("classificacao_lead", "")
+        # 6. Determine User Tier (using existing state to avoid latency)
+        user_data = db.get_user(request.user_id)
+        current_classification = user_data.get("classificacao_lead", "") if user_data else ""
 
         # Determine User Tier
         user_tier = "C" # Default / Welcome

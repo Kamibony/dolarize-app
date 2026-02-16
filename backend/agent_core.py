@@ -403,4 +403,47 @@ class AgentCore:
             logger.error(f"Error generating follow-up: {e}")
             return "Olá! Gostaria de retomar nossa conversa sobre sua proteção patrimonial?"
 
+    def extract_contact_info(self, user_message: str) -> Dict[str, Optional[str]]:
+        """
+        Extracts name and email from the user's message using a lightweight prompt.
+        """
+        if not is_genai_configured or self.model is None:
+            return {}
+
+        extraction_prompt = """
+        Analise a mensagem do usuário abaixo e extraia:
+        1. Nome (se o usuário se apresentar, ex: "Sou o João", "Me chamo Maria").
+        2. E-mail (se houver um e-mail válido).
+
+        Responda APENAS em formato JSON:
+        {
+            "nome": "...",   // ou null
+            "email": "..."   // ou null
+        }
+
+        Mensagem:
+        """
+
+        try:
+            full_prompt = f"{extraction_prompt}\n{user_message}"
+            response = self.model.generate_content(full_prompt)
+
+            # Parse JSON
+            import json
+            import re
+
+            text = response.text
+            # Extract JSON block if wrapped in markdown code blocks
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                json_str = match.group(0)
+                return json.loads(json_str)
+            else:
+                 # Try to parse the whole text if no code block
+                 return json.loads(text)
+
+        except Exception as e:
+            logger.error(f"Error extracting contact info: {e}")
+            return {}
+
 agent = AgentCore()

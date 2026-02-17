@@ -381,6 +381,62 @@ async def reset_core_prompt():
         print(f"Error resetting core prompt: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Video Management Endpoints
+
+class VideoRequest(BaseModel):
+    title: str
+    url: str
+    trigger_context: str
+
+@app.get("/admin/videos")
+async def list_videos():
+    try:
+        return db.get_videos()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/videos")
+async def add_video(video: VideoRequest):
+    try:
+        video_data = video.model_dump()
+        video_id = db.save_video(video_data)
+
+        # Refresh Agent to update tools
+        agent.refresh_knowledge_base()
+
+        return {"id": video_id, **video_data}
+    except Exception as e:
+        print(f"Error adding video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/admin/videos/{video_id}")
+async def update_video(video_id: str, video: VideoRequest):
+    try:
+        video_data = video.model_dump()
+        video_data["id"] = video_id
+        db.save_video(video_data)
+
+        # Refresh Agent to update tools
+        agent.refresh_knowledge_base()
+
+        return {"id": video_id, **video_data}
+    except Exception as e:
+        print(f"Error updating video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/admin/videos/{video_id}")
+async def delete_video(video_id: str):
+    try:
+        db.delete_video(video_id)
+
+        # Refresh Agent to update tools
+        agent.refresh_knowledge_base()
+
+        return {"message": "Video deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

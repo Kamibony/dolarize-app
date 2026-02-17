@@ -310,3 +310,48 @@ class FirestoreClient:
             {"core_prompt_text": prompt_text, "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()},
             merge=True
         )
+
+    def save_video(self, video_data: Dict[str, Any]) -> str:
+        """
+        Saves or updates a video in the 'videos' collection.
+        Expected video_data:
+        {
+            "id": "optional_if_new",
+            "title": "...",
+            "url": "...",
+            "trigger_context": "..."
+        }
+        """
+        video_id = video_data.get("id")
+        if video_id:
+            # Update existing
+            doc_ref = self.db.collection("videos").document(video_id)
+            doc_ref.set(video_data, merge=True)
+            return video_id
+        else:
+            # Create new
+            update_time, doc_ref = self.db.collection("videos").add(video_data)
+            return doc_ref.id
+
+    def get_videos(self) -> List[Dict[str, Any]]:
+        """Retrieves all videos."""
+        docs = self.db.collection("videos").stream()
+        videos = []
+        for doc in docs:
+            v = doc.to_dict()
+            v["id"] = doc.id
+            videos.append(v)
+        return videos
+
+    def get_video(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a single video by ID."""
+        doc = self.db.collection("videos").document(video_id).get()
+        if doc.exists:
+            v = doc.to_dict()
+            v["id"] = doc.id
+            return v
+        return None
+
+    def delete_video(self, video_id: str) -> None:
+        """Deletes a video record."""
+        self.db.collection("videos").document(video_id).delete()

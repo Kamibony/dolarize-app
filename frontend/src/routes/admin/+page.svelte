@@ -9,8 +9,8 @@
     let isLoadingHistory = false;
     let dashboardStats = null;
 
-    // CRM vs KB vs Config Mode
-    let mode = 'crm'; // 'crm' | 'kb' | 'config'
+    // CRM vs KB vs Config vs Videos Mode
+    let mode = 'crm'; // 'crm' | 'kb' | 'config' | 'videos'
 
     // Knowledge Base State
     let activeKbTab = 'knowledge'; // 'knowledge' | 'persona'
@@ -25,6 +25,13 @@
     let isLoadingPrompt = false;
     let isSavingPrompt = false;
     let promptStatus = ''; // 'saved', 'reset', 'error', ''
+
+    // Video State
+    let videos = [];
+    let isLoadingVideos = false;
+    let isSavingVideo = false;
+    let videoForm = { id: null, title: '', url: '', trigger_context: '' };
+    let isEditingVideo = false;
 
     onMount(async () => {
         try {
@@ -51,11 +58,13 @@
         }
     });
 
-    // Fetch files or prompt when switching modes
+    // Fetch data based on mode
     $: if (mode === 'kb') {
         fetchFiles();
     } else if (mode === 'config') {
         fetchCorePrompt();
+    } else if (mode === 'videos') {
+        fetchVideos();
     }
 
     async function fetchCorePrompt() {
@@ -259,6 +268,89 @@
             alert("Erro ao alterar status do bot.");
         }
     }
+
+    // Video Functions
+    async function fetchVideos() {
+        isLoadingVideos = true;
+        try {
+            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/videos');
+            if (res.ok) {
+                videos = await res.json();
+            } else {
+                console.error("Failed to fetch videos");
+            }
+        } catch (e) {
+            console.error("Error fetching videos:", e);
+        } finally {
+            isLoadingVideos = false;
+        }
+    }
+
+    function editVideo(video) {
+        videoForm = { ...video };
+        isEditingVideo = true;
+    }
+
+    function cancelEditVideo() {
+        videoForm = { id: null, title: '', url: '', trigger_context: '' };
+        isEditingVideo = false;
+    }
+
+    async function saveVideo() {
+        if (!videoForm.title || !videoForm.url || !videoForm.trigger_context) {
+            alert("Preencha todos os campos.");
+            return;
+        }
+
+        isSavingVideo = true;
+        try {
+            const method = videoForm.id ? 'PUT' : 'POST';
+            const url = videoForm.id
+                ? `https://dolarize-api-493794054971.us-central1.run.app/admin/videos/${videoForm.id}`
+                : 'https://dolarize-api-493794054971.us-central1.run.app/admin/videos';
+
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: videoForm.title,
+                    url: videoForm.url,
+                    trigger_context: videoForm.trigger_context
+                })
+            });
+
+            if (res.ok) {
+                await fetchVideos();
+                cancelEditVideo();
+            } else {
+                alert("Erro ao salvar vídeo.");
+            }
+        } catch (e) {
+            console.error("Error saving video:", e);
+            alert("Erro ao salvar vídeo.");
+        } finally {
+            isSavingVideo = false;
+        }
+    }
+
+    async function deleteVideo(videoId) {
+        if (!confirm('Tem certeza que deseja excluir este vídeo?')) return;
+
+        try {
+            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/videos/${videoId}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                await fetchVideos();
+            } else {
+                alert("Erro ao excluir vídeo.");
+            }
+        } catch (e) {
+            console.error("Delete error:", e);
+            alert("Erro ao excluir vídeo.");
+        }
+    }
 </script>
 
 <div class="flex h-screen bg-dolarize-dark text-white font-sans overflow-hidden">
@@ -279,6 +371,12 @@
                     on:click={() => { mode = 'crm'; selectedUser = null; }}
                 >
                     CRM
+                </button>
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'videos' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'videos'; selectedUser = null; }}
+                >
+                    Vídeos
                 </button>
                 <button
                     class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'kb' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
@@ -332,6 +430,15 @@
                         {/each}
                     </ul>
                 {/if}
+            {:else if mode === 'videos'}
+                <!-- Videos Info -->
+                <div class="p-6 text-sm text-gray-400 space-y-4">
+                    <p>Central de Vídeos Inteligente.</p>
+                    <p>Cadastre vídeos que a IA recomendará estrategicamente durante as conversas.</p>
+                    <div class="bg-dolarize-gold/10 border border-dolarize-gold/30 p-3 rounded text-xs text-yellow-200">
+                        Nota: A IA apenas recomendará vídeos para leads qualificados (Perfil A ou B).
+                    </div>
+                </div>
             {:else if mode === 'kb'}
                 <!-- Knowledge Base Info -->
                 <div class="p-6 text-sm text-gray-400 space-y-4">
@@ -547,6 +654,124 @@
                     </div>
                 </div>
             {/if}
+        {:else if mode === 'videos'}
+             <!-- Videos Mode -->
+             <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
+                <div class="flex justify-between items-start mb-8">
+                    <div>
+                        <h1 class="text-2xl font-bold tracking-tight text-white mb-2">Central de Vídeos</h1>
+                        <p class="text-sm text-gray-400">Gerencie a biblioteca de vídeos recomendados pela IA.</p>
+                    </div>
+
+                    <!-- Add Video Button -->
+                     <button
+                        class="bg-dolarize-gold text-dolarize-dark font-bold text-sm px-4 py-2 rounded shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
+                        on:click={() => { cancelEditVideo(); isEditingVideo = true; }}
+                    >
+                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Novo Vídeo
+                    </button>
+                </div>
+
+                <!-- Editor Form -->
+                {#if isEditingVideo}
+                    <div class="bg-gray-800/50 border border-dolarize-blue-glow/30 rounded-lg p-6 mb-8 shadow-xl" in:fade>
+                         <h3 class="text-lg font-bold text-white mb-4">{videoForm.id ? 'Editar Vídeo' : 'Novo Vídeo'}</h3>
+                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                             <div>
+                                 <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Título</label>
+                                 <input type="text" bind:value={videoForm.title} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors" placeholder="Ex: Como proteger seu patrimônio">
+                             </div>
+                             <div>
+                                 <label class="block text-xs font-bold uppercase text-gray-400 mb-1">URL (YouTube)</label>
+                                 <input type="text" bind:value={videoForm.url} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors" placeholder="https://youtu.be/...">
+                             </div>
+                         </div>
+                         <div class="mb-4">
+                             <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Contexto de Gatilho (Para a IA)</label>
+                             <textarea bind:value={videoForm.trigger_context} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors h-24 resize-none" placeholder="Descreva QUANDO a IA deve recomendar este vídeo. Ex: Quando o lead perguntar sobre segurança da corretora..."></textarea>
+                         </div>
+                         <div class="flex justify-end gap-3">
+                             <button on:click={cancelEditVideo} class="px-4 py-2 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 text-sm font-semibold transition-colors">Cancelar</button>
+                             <button on:click={saveVideo} disabled={isSavingVideo} class="px-4 py-2 rounded bg-dolarize-gold text-dolarize-dark font-bold text-sm hover:bg-white transition-colors flex items-center gap-2">
+                                 {#if isSavingVideo}Saving...{:else}Salvar Vídeo{/if}
+                             </button>
+                         </div>
+                    </div>
+                {/if}
+
+                <!-- Video List -->
+                <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
+                    <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wide">Vídeos Ativos</h3>
+                        <span class="text-xs text-gray-400">{videos.length} vídeos</span>
+                    </div>
+
+                    {#if isLoadingVideos}
+                        <div class="p-12 text-center text-gray-500 animate-pulse">Carregando vídeos...</div>
+                    {:else if videos.length === 0}
+                         <div class="p-12 text-center flex flex-col items-center justify-center text-gray-500">
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-4 opacity-30">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                            </svg>
+                             <p>Nenhum vídeo cadastrado.</p>
+                         </div>
+                    {:else}
+                        <div class="overflow-auto custom-scrollbar flex-1">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-black/20 text-xs text-gray-400 uppercase font-semibold sticky top-0 z-10 backdrop-blur-sm">
+                                    <tr>
+                                        <th class="p-4 border-b border-white/5">Título</th>
+                                        <th class="p-4 border-b border-white/5">Gatilho (Contexto)</th>
+                                        <th class="p-4 border-b border-white/5 text-right">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-white/5 text-sm">
+                                    {#each videos as video}
+                                    <tr class="hover:bg-white/5 transition-colors group">
+                                        <td class="p-4 font-medium text-white flex items-center gap-3">
+                                            <div class="p-2 bg-red-500/10 rounded text-red-400">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.328l5.603 3.113z" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{video.title}</div>
+                                                <a href={video.url} target="_blank" class="text-[10px] text-blue-400 hover:text-blue-300 hover:underline font-mono truncate max-w-[200px] block">{video.url}</a>
+                                            </div>
+                                        </td>
+                                        <td class="p-4 text-gray-400 text-xs leading-relaxed max-w-[300px]">{video.trigger_context}</td>
+                                        <td class="p-4 text-right">
+                                            <button
+                                                class="text-blue-400 hover:text-blue-200 hover:bg-blue-900/30 p-2 rounded transition-colors mr-1"
+                                                title="Editar"
+                                                on:click={() => editVideo(video)}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                class="text-red-400 hover:text-red-200 hover:bg-red-900/30 p-2 rounded transition-colors"
+                                                title="Excluir"
+                                                on:click={() => deleteVideo(video.id)}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                </svg>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        </div>
+                    {/if}
+                </div>
+             </div>
         {:else if mode === 'kb'}
             <!-- Knowledge Base Mode -->
              <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>

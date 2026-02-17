@@ -11,11 +11,35 @@
     let newMessage = '';
     let isLoading = false;
     let chatContainer;
+    let hasInteracted = false;
+
+    // Helper to safely track Meta Pixel events
+    function trackPixelEvent(eventName, params = {}) {
+        if (typeof window !== 'undefined' && window.fbq) {
+            console.log(`[Pixel] Tracking event: ${eventName}`, params);
+            window.fbq('track', eventName, params);
+        } else {
+            console.log(`[Pixel] Placeholder tracked: ${eventName}`, params);
+        }
+    }
 
     async function sendMessage() {
         if (newMessage.trim() === '' || isLoading) return;
 
+        // Marketing Analytics: Track first interaction
+        if (!hasInteracted) {
+            trackPixelEvent('Lead'); // Or 'InitiateCheckout' as per strategy
+            hasInteracted = true;
+        }
+
         const userMessage = newMessage;
+
+        // Marketing Analytics: Detect Email for 'CompleteRegistration'
+        const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
+        if (emailRegex.test(userMessage)) {
+            trackPixelEvent('CompleteRegistration', { value: 0.00, currency: 'BRL' });
+        }
+
         messages = [...messages, { sender: 'user', text: userMessage }];
         newMessage = '';
         isLoading = true;
@@ -37,7 +61,11 @@
             }
 
             const data = await response.json();
-            messages = [...messages, { sender: 'agent', text: data.response }];
+
+            // Only add agent message if response is not empty (handles bot_paused case)
+            if (data.response && data.response.trim() !== '') {
+                messages = [...messages, { sender: 'agent', text: data.response }];
+            }
 
             // Update tier if provided
             if (data.user_tier) {

@@ -297,6 +297,7 @@ class AgentCore:
     def format_history(raw_history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Helper to convert Firestore history to Gemini history format.
+        Ensures strict User/Model alternation by merging consecutive messages from the same role.
         """
         gemini_history = []
         # Firestore returns most recent first, so reverse to get chronological order
@@ -304,10 +305,17 @@ class AgentCore:
             if "mensagens" in interaction:
                 for msg in interaction["mensagens"]:
                     role = "model" if msg["role"] == "agent" else "user"
-                    gemini_history.append({
-                        "role": role,
-                        "parts": [msg["content"]]
-                    })
+                    content = msg["content"]
+
+                    if not gemini_history:
+                        gemini_history.append({"role": role, "parts": [content]})
+                    else:
+                        last_msg = gemini_history[-1]
+                        if last_msg["role"] == role:
+                            # Merge content into existing turn
+                            last_msg["parts"].append(content)
+                        else:
+                            gemini_history.append({"role": role, "parts": [content]})
         return gemini_history
 
     def analyze_lead_qualification(self, history: List[Dict[str, str]]) -> Dict[str, Any]:

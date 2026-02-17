@@ -233,6 +233,32 @@
             isLoadingHistory = false;
         }
     }
+
+    async function toggleBotPause(user) {
+        if (!user) return;
+        const newStatus = !user.bot_paused;
+
+        try {
+            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/users/${user.id}/toggle-bot`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paused: newStatus })
+            });
+
+            if (res.ok) {
+                // Update local state
+                user.bot_paused = newStatus;
+                users = users; // Trigger reactivity
+                selectedUser = user; // Trigger reactivity
+            } else {
+                console.error("Failed to toggle bot pause");
+                alert("Erro ao alterar status do bot.");
+            }
+        } catch (e) {
+            console.error("Error toggling bot pause:", e);
+            alert("Erro ao alterar status do bot.");
+        }
+    }
 </script>
 
 <div class="flex h-screen bg-dolarize-dark text-white font-sans overflow-hidden">
@@ -338,7 +364,26 @@
                 <!-- User Header -->
                 <header class="px-6 py-4 border-b border-dolarize-blue-glow/20 bg-dolarize-dark/95 backdrop-blur-sm flex justify-between items-center z-10">
                     <div>
-                        <h2 class="text-lg font-bold text-white tracking-tight">{selectedUser.nome || 'Usuário'}</h2>
+                        <div class="flex items-center gap-3">
+                            <h2 class="text-lg font-bold text-white tracking-tight">{selectedUser.nome || 'Usuário'}</h2>
+                             <button
+                                on:click={() => toggleBotPause(selectedUser)}
+                                class={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded transition-all border flex items-center gap-1 ${selectedUser.bot_paused ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50 hover:bg-yellow-500/30' : 'bg-green-500/20 text-green-400 border-green-500/50 hover:bg-green-500/30'}`}
+                                title={selectedUser.bot_paused ? "Clique para reativar a IA" : "Clique para pausar a IA e assumir o chat"}
+                            >
+                                {#if selectedUser.bot_paused}
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3">
+                                      <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                    </svg>
+                                    IA Pausada
+                                {:else}
+                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3">
+                                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+                                    </svg>
+                                    IA Ativa
+                                {/if}
+                            </button>
+                        </div>
                         <p class="text-sm text-gray-400">{selectedUser.telefone || 'Sem telefone'}</p>
                     </div>
                     <div class="text-right">

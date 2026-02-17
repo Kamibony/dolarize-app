@@ -36,6 +36,9 @@ class ChatResponse(BaseModel):
     response: str
     user_tier: str
 
+class ToggleBotRequest(BaseModel):
+    paused: bool
+
 def process_background_tasks(user_id: str, message: str, history: List[Dict[str, Any]]):
     """
     Background task to handle entity extraction and lead qualification.
@@ -62,6 +65,27 @@ def process_background_tasks(user_id: str, message: str, history: List[Dict[str,
     except Exception as e:
         print(f"Error in background lead qualification: {e}")
 
+    # 3. Hot Lead Notification
+    try:
+        # Fetch latest user data to check cumulative state (Name + Email + Classification)
+        user_data = db.get_user(user_id)
+        if user_data:
+            classification = user_data.get("classificacao_lead", "")
+            email = user_data.get("email")
+            name = user_data.get("nome", "Unknown")
+
+            # Check if Perfil A and Email exists
+            is_hot = False
+            if isinstance(classification, str) and ("A" in classification or "Quente" in classification or "Qualificado" in classification):
+                is_hot = True
+
+            if is_hot and email:
+                 # Trigger Notification
+                 print(f"🔥 HOT LEAD ALERT: {name} ({email}) has been classified as PERFIL A.")
+                 # Future: Send SMTP email here
+    except Exception as e:
+        print(f"Error in hot lead notification: {e}")
+
 @app.get("/")
 async def root():
     return {"message": "Dolarize API is running"}
@@ -69,20 +93,41 @@ async def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     try:
+        # Check User Pause Status & Tier
+        user_data = db.get_user(request.user_id)
+        current_classification = user_data.get("classificacao_lead", "") if user_data else ""
+
+        # Determine User Tier
+        user_tier = "C" # Default / Welcome
+        if isinstance(current_classification, str):
+            if "A" in current_classification or "Quente" in current_classification or "Qualificado" in current_classification:
+                user_tier = "A"
+            elif "B" in current_classification or "Morno" in current_classification:
+                user_tier = "B"
+
+        if user_data and user_data.get("bot_paused", False):
+            # Bot is paused. Save user message but do not reply.
+            new_interaction = {
+                "id_usuario": request.user_id,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "origem": "web_chat",
+                "mensagens": [
+                    {"role": "user", "content": request.message}
+                ],
+                "analise_emocional": "Neutro",
+                "precisa_intervencao_humana": True
+            }
+            db.save_chat_interaction(new_interaction)
+            db.update_user_interaction(request.user_id, reset_followup_count=True)
+
+            # Return empty response to indicate no reply
+            return ChatResponse(response="", user_tier=user_tier)
+
         # 1. Fetch history
         raw_history = db.get_chat_history(request.user_id, limit=20)
 
-        # 2. Format history for Gemini
-        gemini_history = []
-        # Firestore returns most recent first, so reverse to get chronological order
-        for interaction in reversed(raw_history):
-            if "mensagens" in interaction:
-                for msg in interaction["mensagens"]:
-                    role = "model" if msg["role"] == "agent" else "user"
-                    gemini_history.append({
-                        "role": role,
-                        "parts": [msg["content"]]
-                    })
+        # 2. Format history for Gemini using the robust helper
+        gemini_history = agent.format_history(raw_history)
 
         # 3. Generate response
         response_text = agent.generate_response(request.message, gemini_history)
@@ -112,21 +157,17 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         # Add background tasks for Entity Extraction and Lead Qualification
         background_tasks.add_task(process_background_tasks, request.user_id, request.message, gemini_history)
 
-        # 6. Determine User Tier (using existing state to avoid latency)
-        user_data = db.get_user(request.user_id)
-        current_classification = user_data.get("classificacao_lead", "") if user_data else ""
-
-        # Determine User Tier
-        user_tier = "C" # Default / Welcome
-        if isinstance(current_classification, str):
-            if "A" in current_classification or "Quente" in current_classification or "Qualificado" in current_classification:
-                user_tier = "A"
-            elif "B" in current_classification or "Morno" in current_classification:
-                user_tier = "B"
-
         return ChatResponse(response=response_text, user_tier=user_tier)
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/users/{user_id}/toggle-bot")
+async def toggle_bot_pause(user_id: str, request: ToggleBotRequest):
+    try:
+        db.update_bot_pause_status(user_id, request.paused)
+        return {"message": f"Bot paused status updated to {request.paused}"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 class FollowUpRequest(BaseModel):

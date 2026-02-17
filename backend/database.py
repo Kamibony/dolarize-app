@@ -85,6 +85,14 @@ class FirestoreClient:
                 update_data, merge=True
             )
 
+    def update_bot_pause_status(self, user_id: str, paused: bool) -> None:
+        """
+        Updates the bot_paused status for a user.
+        """
+        self.db.collection("usuarios").document(user_id).set(
+            {"bot_paused": paused}, merge=True
+        )
+
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Retrieves a user profile by ID."""
         doc_ref = self.db.collection("usuarios").document(user_id)

@@ -161,6 +161,7 @@ class AgentCore:
     def __init__(self):
         self.db = None
         self.model = None
+        self.video_catalogue = {}
 
         try:
             self.db = FirestoreClient()
@@ -180,10 +181,27 @@ class AgentCore:
             self.model = None
             logger.error("AgentCore initialized without a valid GenAI configuration.")
 
+    def recommend_video(self, video_id: str):
+        """
+        Retrieves the URL for a specific video recommendation.
+
+        Args:
+            video_id: The ID of the video to recommend (from the available catalogue).
+
+        Returns:
+            A string containing the video title and URL.
+        """
+        # We need to access the catalogue.
+        video = self.video_catalogue.get(video_id)
+        if video:
+            return f"Vídeo Recomendado: {video['title']}\nLink: {video['url']}"
+        else:
+            return "Vídeo não encontrado."
+
     def refresh_knowledge_base(self):
         """
         Refreshes the knowledge base by fetching active files and re-initializing the model.
-        Implements Hybrid Brain Architecture (Core + Persona + Knowledge).
+        Implements Hybrid Brain Architecture (Core + Persona + Knowledge + Tools).
         """
         if not is_genai_configured:
             return
@@ -191,6 +209,9 @@ class AgentCore:
         knowledge_files = []
         persona_files = []
         core_prompt = SYSTEM_PROMPT # Default fallback
+        video_prompt_section = ""
+        self.video_catalogue = {} # Reset
+        tools_list = []
 
         if self.db:
             try:
@@ -219,10 +240,39 @@ class AgentCore:
                                  knowledge_files.append(file_obj)
                          except Exception as e:
                              logger.error(f"Error retrieving file {file_name} from Gemini: {e}")
+
+                # Fetch Videos for Tool Calling
+                try:
+                    videos = self.db.get_videos()
+                    if videos:
+                        video_prompt_section += "\n\n--- CATÁLOGO DE VÍDEOS (FERRAMENTA DISPONÍVEL) ---\n"
+                        video_prompt_section += "Você tem acesso à ferramenta `recommend_video(video_id)`. "
+                        video_prompt_section += "Use esta ferramenta quando o contexto da conversa corresponder a um dos itens abaixo, "
+                        video_prompt_section += "MAS APENAS SE O USUÁRIO FOR PERFIL A OU B (Qualificado/Morno).\n"
+                        video_prompt_section += "Leads Perfil C (Frio/Curioso) NÃO devem receber vídeos, a menos que o contexto seja técnico (suporte).\n\n"
+                        video_prompt_section += "IDs DISPONÍVEIS:\n"
+
+                        for v in videos:
+                            v_id = v.get("id")
+                            title = v.get("title", "Sem Título")
+                            trigger = v.get("trigger_context", "Geral")
+                            url = v.get("url", "")
+
+                            self.video_catalogue[v_id] = {"title": title, "url": url}
+                            video_prompt_section += f"- ID: {v_id} | Título: {title} | Gatilho: {trigger}\n"
+
+                        video_prompt_section += "---------------------------------------------------\n"
+
+                        # Enable the tool
+                        tools_list.append(self.recommend_video)
+
+                except Exception as e:
+                    logger.error(f"Error fetching videos: {e}")
+
             except Exception as e:
                 logger.error(f"Error fetching data from DB: {e}")
 
-        logger.info(f"Initializing Agent with {len(persona_files)} persona files and {len(knowledge_files)} knowledge files.")
+        logger.info(f"Initializing Agent with {len(persona_files)} persona files, {len(knowledge_files)} knowledge files, and {len(tools_list)} tools.")
 
         # Construct Hybrid System Instruction
         # Layer 1: Immutable Core (Dynamic or Static)
@@ -244,10 +294,15 @@ class AgentCore:
             system_instruction_parts.extend(knowledge_files)
             system_instruction_parts.append("\n--- FIM DOS ARQUIVOS DE CONHECIMENTO ---\n")
 
+        # Layer 4: Dynamic Injection - Tools Catalogue
+        if video_prompt_section:
+            system_instruction_parts.append(video_prompt_section)
+
         try:
             self.model = genai.GenerativeModel(
                 model_name='gemini-2.5-flash',
-                system_instruction=system_instruction_parts
+                system_instruction=system_instruction_parts,
+                tools=tools_list if tools_list else None
             )
         except Exception as e:
              logger.error(f"Error initializing GenerativeModel with knowledge base: {e}")
@@ -267,7 +322,9 @@ class AgentCore:
 
         if history is None:
             history = []
-        return self.model.start_chat(history=history)
+
+        # Enable automatic function calling if tools are present
+        return self.model.start_chat(history=history, enable_automatic_function_calling=True)
 
     def generate_response(self, user_message: str, history: List[Dict[str, str]] = []) -> str:
         """
@@ -285,8 +342,8 @@ class AgentCore:
             return "Erro: O sistema de IA não está disponível no momento (Chave de API inválida ou ausente)."
 
         try:
-            # Create a chat session with the provided history
-            chat = self.model.start_chat(history=history)
+            # Create a chat session with the provided history and enable auto function calling
+            chat = self.model.start_chat(history=history, enable_automatic_function_calling=True)
             response = chat.send_message(user_message)
             return response.text
         except Exception as e:

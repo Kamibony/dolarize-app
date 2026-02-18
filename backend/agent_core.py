@@ -257,10 +257,15 @@ class AgentCore:
                         if file_name:
                              try:
                                  file_obj = genai.get_file(file_name)
-                                 if file_type == "persona":
-                                     persona_files.append(file_obj)
+                                 # Robust Check: Only include ACTIVE files to prevent crashes
+                                 if hasattr(file_obj, 'state') and file_obj.state.name == "ACTIVE":
+                                     if file_type == "persona":
+                                         persona_files.append(file_obj)
+                                     else:
+                                         knowledge_files.append(file_obj)
                                  else:
-                                     knowledge_files.append(file_obj)
+                                     state_name = file_obj.state.name if hasattr(file_obj, 'state') else "UNKNOWN"
+                                     logger.warning(f"Skipping file {file_name} as it is not ACTIVE (State: {state_name})")
                              except Exception as e:
                                  logger.error(f"Error retrieving file {file_name} from Gemini: {e}")
                     except Exception as e:
@@ -373,7 +378,7 @@ class AgentCore:
             return response.text
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            return "Desculpe, vamos com calma. Ocorreu um erro ao processar sua mensagem."
+            return f"DEBUG ERROR: {str(e)}"
 
     @staticmethod
     def format_history(raw_history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

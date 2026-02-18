@@ -1,5 +1,5 @@
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, storage
 from google.cloud import firestore as google_firestore
 from typing import List, Dict, Any, Optional
 import os
@@ -288,6 +288,68 @@ class FirestoreClient:
             data["id"] = doc.id
             return data
         return None
+
+    def get_config_content(self, key: str, default_text: str) -> str:
+        """
+        Retrieves configuration content from 'system_settings' collection.
+        Handles both direct text and file references (gs:// or relative path).
+        Returns default_text on failure.
+        """
+        try:
+            doc = self.db.collection("system_settings").document(key).get()
+            if not doc.exists:
+                return default_text
+
+            data = doc.to_dict()
+            # Check multiple potential field names
+            content = data.get("content", data.get("value", data.get("text", "")))
+
+            if not content:
+                return default_text
+
+            # Check if it's a file reference
+            is_file_ref = False
+            if content.startswith("gs://"):
+                is_file_ref = True
+            elif content.startswith("files/") or content.startswith("settings/") or content.endswith(".txt"): # Heuristic
+                is_file_ref = True
+
+            if is_file_ref:
+                try:
+                    bucket = storage.bucket()
+                    blob = None
+
+                    if content.startswith("gs://"):
+                        # Parse bucket and path: gs://bucket_name/path/to/file
+                        parts = content.replace("gs://", "").split("/", 1)
+                        if len(parts) == 2:
+                            bucket_name, blob_name = parts
+                            # Use specific bucket if possible, but default bucket usually works if same project
+                            # Here we try to get the specific bucket
+                            try:
+                                bucket = storage.bucket(bucket_name)
+                            except Exception:
+                                pass # Fallback to default
+                            blob = bucket.blob(blob_name)
+                    else:
+                        blob = bucket.blob(content)
+
+                    if blob:
+                        # blob.exists() check might be network intensive, download directly and catch error
+                        return blob.download_as_text()
+                    else:
+                        print(f"Config file blob could not be created: {content}")
+                        return default_text
+
+                except Exception as e:
+                    print(f"Error downloading config file {content}: {e}")
+                    return default_text
+
+            return content # Return as text
+
+        except Exception as e:
+            print(f"Error fetching config {key}: {e}")
+            return default_text
 
     def get_core_prompt(self) -> Optional[str]:
         """

@@ -248,7 +248,16 @@ class AgentCore:
                         file_name = record.get("name") # Gemini file name 'files/xyz'
                         file_type = record.get("type", "knowledge")
 
-                        if file_name:
+                        extracted_text = record.get("extracted_text")
+
+                        if extracted_text:
+                            # It's a text payload (DOCX/TXT)
+                            if file_type == "persona":
+                                self.active_persona_files.append(extracted_text)
+                            else:
+                                self.active_knowledge_files.append(extracted_text)
+
+                        elif file_name:
                              try:
                                  file_obj = genai.get_file(file_name)
                                  # Robust Check: Only include ACTIVE files to prevent crashes

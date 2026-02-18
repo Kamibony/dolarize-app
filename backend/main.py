@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from agent_core import agent, SYSTEM_PROMPT
 from database import FirestoreClient
 from routers import webhooks
+from utils import FileParser
 import os
 import datetime
 import shutil
@@ -257,29 +258,47 @@ async def upload_knowledge_file(file: UploadFile = File(...), file_type: str = F
             tmp_path = tmp.name
 
         try:
-            # 2. Upload to Gemini
+            # 2. Upload to Gemini or Extract Text
             # Determine mime_type if not provided
             mime_type = file.content_type
             if not mime_type:
                  if suffix.lower() == '.pdf': mime_type = 'application/pdf'
                  elif suffix.lower() in ['.txt', '.md']: mime_type = 'text/plain'
                  elif suffix.lower() == '.csv': mime_type = 'text/csv'
+                 elif suffix.lower() == '.docx': mime_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                  else: mime_type = 'application/octet-stream' # Fallback
 
-            # Using genai.upload_file directly
-            gemini_file = genai.upload_file(path=tmp_path, mime_type=mime_type, display_name=file.filename)
+            # Using FileParser to handle different types
+            parsed_result = FileParser.parse_file(file_path=tmp_path, mime_type=mime_type, display_name=file.filename)
+
+            file_data = {}
+            if isinstance(parsed_result, str):
+                # It's extracted text
+                file_data = {
+                    "name": None,
+                    "display_name": file.filename,
+                    "uri": None,
+                    "mime_type": mime_type,
+                    "size_bytes": len(parsed_result.encode('utf-8')),
+                    "state": "ACTIVE",
+                    "extracted_text": parsed_result,
+                    "type": "text_payload"
+                }
+            else:
+                # It's a Gemini File object
+                gemini_file = parsed_result
+                file_data = {
+                    "name": gemini_file.name, # e.g. "files/..."
+                    "display_name": gemini_file.display_name,
+                    "uri": gemini_file.uri,
+                    "mime_type": gemini_file.mime_type,
+                    "size_bytes": gemini_file.size_bytes,
+                    # Store state if possible, though it's an enum usually
+                    "state": str(gemini_file.state.name) if hasattr(gemini_file.state, 'name') else str(gemini_file.state),
+                    "type": "file_ref"
+                }
 
             # 3. Save metadata to Firestore
-            file_data = {
-                "name": gemini_file.name, # e.g. "files/..."
-                "display_name": gemini_file.display_name,
-                "uri": gemini_file.uri,
-                "mime_type": gemini_file.mime_type,
-                "size_bytes": gemini_file.size_bytes,
-                # Store state if possible, though it's an enum usually
-                "state": str(gemini_file.state.name) if hasattr(gemini_file.state, 'name') else str(gemini_file.state)
-            }
-
             doc_id = db.add_knowledge_file(file_data, file_type=file_type)
 
             # 4. Refresh Agent

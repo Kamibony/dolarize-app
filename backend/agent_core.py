@@ -4,7 +4,7 @@ import logging
 import google.generativeai as genai
 from typing import List, Dict, Optional, Any
 from database import FirestoreClient
-from utils import GEMINI_SUPPORTED_MIME_TYPES, TEXT_MIME_TYPES
+from utils import GEMINI_NATIVE_MIME_TYPES, TEXT_PARSABLE_MIME_TYPES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -225,9 +225,9 @@ class AgentCore:
         is_native_asset = False
 
         # Determine asset class based on MIME type or fallback
-        if mime_type in TEXT_MIME_TYPES or mime_type.startswith("text/") or "json" in mime_type:
+        if mime_type in TEXT_PARSABLE_MIME_TYPES or mime_type.startswith("text/") or "json" in mime_type:
              is_text_asset = True
-        elif (mime_type in GEMINI_SUPPORTED_MIME_TYPES or
+        elif (mime_type in GEMINI_NATIVE_MIME_TYPES or
               mime_type.startswith("image/") or
               mime_type.startswith("video/") or
               mime_type.startswith("audio/") or

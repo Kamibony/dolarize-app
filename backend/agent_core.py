@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import google.generativeai as genai
+import contextvars
 from typing import List, Dict, Optional, Any
 from database import FirestoreClient
 from utils import GEMINI_NATIVE_MIME_TYPES, TEXT_PARSABLE_MIME_TYPES
@@ -9,6 +10,9 @@ from utils import GEMINI_NATIVE_MIME_TYPES, TEXT_PARSABLE_MIME_TYPES
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Context Variable for User ID
+user_context = contextvars.ContextVar("user_context", default=None)
 
 DEFAULT_IDENTITY = """
 1. IDENTIDADE E MISSÃO (CAP. 5)
@@ -65,6 +69,9 @@ Ao receber uma mensagem, classifique a intenção e aplique a lógica:
    E. FALLBACK (NÃO ENTENDEU):
       -> Faça uma pergunta de condução para esclarecer.
       -> Ex: "Não entendi bem. Você se refere à proteção ou aos investimentos?"
+
+   F. EXTRAÇÃO DE DADOS (CRM):
+      Every time the user reveals information about themselves (Name, Contact, or their Financial Pain/Goals), you MUST call extract_lead_info to update the CRM record. Do not wait for all data to be present. Save what you have immediately.
 
 5. ESTRUTURA DE RESPOSTA OBRIGATÓRIA (CAP. 6)
 Todas as suas respostas devem seguir este template de 4 camadas:
@@ -209,6 +216,41 @@ class AgentCore:
         else:
             return "Vídeo não encontrado."
 
+    def extract_lead_info(self, name: Optional[str] = None, email: Optional[str] = None, phone: Optional[str] = None, pain_point: Optional[str] = None, profile_category: Optional[str] = None) -> str:
+        """
+        Updates the lead information in the CRM.
+
+        Args:
+            name: The user's name.
+            email: The user's email address.
+            phone: The user's phone number.
+            pain_point: The user's main financial struggle (e.g., "Fear", "Inflation").
+            profile_category: The classification (A_ESTRUTURADO, B_EM_CONSTRUCAO, C_CURIOSO).
+
+        Returns:
+            A status message.
+        """
+        user_id = user_context.get()
+        if not user_id:
+            logger.warning("extract_lead_info called without user context.")
+            return "Erro: Contexto do usuário não encontrado."
+
+        try:
+            data = {
+                "id": user_id,
+                "nome": name,
+                "email": email,
+                "telefone": phone,
+                "dor_principal": pain_point,
+                "classificacao_lead": profile_category
+            }
+            # Remove None values is handled by save_lead, but we pass them anyway as kwargs defaults are None
+            self.db.save_lead(data)
+            return "Informações do lead atualizadas com sucesso."
+        except Exception as e:
+            logger.error(f"Error in extract_lead_info: {e}")
+            return "Erro ao atualizar informações."
+
     def _process_knowledge_asset(self, record: Dict[str, Any]):
         """
         Routes the knowledge asset to the correct context list based on MIME type.
@@ -347,6 +389,9 @@ class AgentCore:
 
             except Exception as e:
                 logger.error(f"Error fetching data from DB: {e}")
+
+        # Always enable extract_lead_info
+        tools_list.append(self.extract_lead_info)
 
         logger.info(f"Initializing Agent with {len(self.active_persona_files)} persona files, {len(self.active_knowledge_files)} knowledge files, and {len(tools_list)} tools.")
 

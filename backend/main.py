@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, F
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from agent_core import agent, SYSTEM_PROMPT
+from agent_core import agent, SYSTEM_PROMPT, user_context
 from database import FirestoreClient
 from routers import webhooks
 from utils import FileParser
@@ -98,6 +98,8 @@ async def root():
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
+    # Set User Context for this request to allow tools to access user_id
+    token = user_context.set(request.user_id)
     try:
         # Check User Pause Status & Tier
         user_data = db.get_user(request.user_id)

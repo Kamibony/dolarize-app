@@ -4,6 +4,7 @@ import logging
 import google.generativeai as genai
 from typing import List, Dict, Optional, Any
 from database import FirestoreClient
+from utils import GEMINI_SUPPORTED_MIME_TYPES, TEXT_MIME_TYPES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -208,6 +209,73 @@ class AgentCore:
         else:
             return "Vídeo não encontrado."
 
+    def _process_knowledge_asset(self, record: Dict[str, Any]):
+        """
+        Routes the knowledge asset to the correct context list based on MIME type.
+        Implements Hybrid Content Pipeline.
+        """
+        file_type = record.get("type", "knowledge") # 'knowledge' or 'persona'
+        mime_type = record.get("mime_type", "").lower() if record.get("mime_type") else ""
+        extracted_text = record.get("extracted_text")
+        gemini_name = record.get("name") # files/xxx
+        display_name = record.get("display_name", "unknown_file")
+
+        # Routing Logic
+        is_text_asset = False
+        is_native_asset = False
+
+        # Determine asset class based on MIME type or fallback
+        if mime_type in TEXT_MIME_TYPES or mime_type.startswith("text/") or "json" in mime_type:
+             is_text_asset = True
+        elif (mime_type in GEMINI_SUPPORTED_MIME_TYPES or
+              mime_type.startswith("image/") or
+              mime_type.startswith("video/") or
+              mime_type.startswith("audio/") or
+              mime_type == "application/pdf"):
+             is_native_asset = True
+
+        # Fallback if MIME type is missing or vague, check available fields
+        if not is_text_asset and not is_native_asset:
+             if extracted_text:
+                 is_text_asset = True
+             elif gemini_name:
+                 # If we have a Gemini Name but no text, and mime is unknown, assume it's a valid native asset
+                 # (Legacy support, but risky if it was a DOCX uploaded by mistake.
+                 # However, if it has a Gemini Name, it was accepted by Gemini, so it must be supported.)
+                 is_native_asset = True
+
+        # Processing
+        if is_text_asset:
+            if extracted_text:
+                if file_type == "persona":
+                    self.active_persona_files.append(extracted_text)
+                else:
+                    self.active_knowledge_files.append(extracted_text)
+            else:
+                logger.warning(f"Text asset {display_name} (MIME: {mime_type}) missing extracted_text. Skipping to avoid 400 Error.")
+
+        elif is_native_asset:
+            if gemini_name:
+                try:
+                    file_obj = genai.get_file(gemini_name)
+                    # Robust Check: Only include ACTIVE files to prevent crashes
+                    if hasattr(file_obj, 'state') and file_obj.state.name == "ACTIVE":
+                        if file_type == "persona":
+                            self.active_persona_files.append(file_obj)
+                        else:
+                            self.active_knowledge_files.append(file_obj)
+                    else:
+                        state_name = file_obj.state.name if hasattr(file_obj, 'state') else "UNKNOWN"
+                        logger.warning(f"Skipping file {gemini_name} as it is not ACTIVE (State: {state_name})")
+                except Exception as e:
+                    logger.error(f"Error retrieving file {gemini_name} from Gemini: {e}")
+            else:
+                 logger.warning(f"Native asset {display_name} missing Gemini Name. Skipping.")
+
+        else:
+            logger.warning(f"Unknown asset type for {display_name} (MIME: {mime_type}). Skipping.")
+
+
     def refresh_knowledge_base(self):
         """
         Refreshes the knowledge base by fetching active files and re-initializing the model.
@@ -243,36 +311,11 @@ class AgentCore:
                 file_records = self.db.get_knowledge_files()
 
                 for record in file_records:
-                    # Objective 3: Robust RAG Loading
+                    # Objective 3: Robust RAG Loading using Hybrid Pipeline
                     try:
-                        file_name = record.get("name") # Gemini file name 'files/xyz'
-                        file_type = record.get("type", "knowledge")
-
-                        extracted_text = record.get("extracted_text")
-
-                        if extracted_text:
-                            # It's a text payload (DOCX/TXT)
-                            if file_type == "persona":
-                                self.active_persona_files.append(extracted_text)
-                            else:
-                                self.active_knowledge_files.append(extracted_text)
-
-                        elif file_name:
-                             try:
-                                 file_obj = genai.get_file(file_name)
-                                 # Robust Check: Only include ACTIVE files to prevent crashes
-                                 if hasattr(file_obj, 'state') and file_obj.state.name == "ACTIVE":
-                                     if file_type == "persona":
-                                         self.active_persona_files.append(file_obj)
-                                     else:
-                                         self.active_knowledge_files.append(file_obj)
-                                 else:
-                                     state_name = file_obj.state.name if hasattr(file_obj, 'state') else "UNKNOWN"
-                                     logger.warning(f"Skipping file {file_name} as it is not ACTIVE (State: {state_name})")
-                             except Exception as e:
-                                 logger.error(f"Error retrieving file {file_name} from Gemini: {e}")
+                        self._process_knowledge_asset(record)
                     except Exception as e:
-                        logger.error(f"Error processing RAG file record {record}: {e}")
+                        logger.error(f"Error processing RAG file record {record.get('id', 'unknown')}: {e}")
 
                 # Fetch Videos for Tool Calling
                 try:

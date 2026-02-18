@@ -23,6 +23,25 @@
         }
     }
 
+    function formatMessage(text) {
+        if (!text) return '';
+
+        // 1. Escape HTML special characters to prevent XSS
+        const safeText = text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+
+        // 2. Replace URLs with anchor tags
+        const urlRegex = /(\b(https?):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+
+        return safeText.replace(urlRegex, (url) => {
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 underline hover:text-blue-300">${url}</a>`;
+        });
+    }
+
     async function sendMessage() {
         if (newMessage.trim() === '' || isLoading) return;
 
@@ -119,7 +138,7 @@
                         : 'bg-dolarize-card text-gray-100 rounded-bl-none border-l-2 border-dolarize-gold shadow-md'
                     }
                 `}>
-                    {message.text}
+                    {@html formatMessage(message.text)}
                 </div>
             </div>
         {/each}

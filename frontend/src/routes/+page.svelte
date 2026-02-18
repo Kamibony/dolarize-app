@@ -28,38 +28,48 @@
 </script>
 
 <div class={`min-h-screen text-white font-sans transition-all duration-1000 ease-in-out ${backgroundClasses}`}>
-    <div class="max-w-7xl mx-auto px-6 py-12 lg:py-24">
 
-        <!-- Hero Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <!-- Left Column: Copy -->
-            <div class="flex flex-col space-y-8 text-center lg:text-left">
-                 <div class="inline-block px-4 py-1.5 rounded-full bg-dolarize-gold/10 border border-dolarize-gold/20 text-dolarize-gold text-sm font-semibold tracking-wider uppercase self-center lg:self-start mb-4">
-                    Imersão Dólarize 2.0
-                </div>
-                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight tracking-tight">
-                    Proteja seu patrimônio da <span class="text-transparent bg-clip-text bg-gradient-to-r from-dolarize-gold to-yellow-200">inflação.</span>
-                </h1>
-                <p class="text-lg md:text-xl text-gray-300 leading-relaxed max-w-2xl mx-auto lg:mx-0">
-                    Converse com nosso Agente de Inteligência Artificial para descobrir sua estratégia ideal de autocustódia e segurança financeira.
-                </p>
+    <!-- Main Grid Container (Hero) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center max-w-7xl mx-auto px-4 py-8 md:py-12">
 
-                 <!-- Mobile Call to Action Arrow (Visual cue) -->
-                 <div class="lg:hidden flex justify-center text-dolarize-gold animate-bounce pt-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                    </svg>
-                </div>
-            </div>
+        <!-- Left Column: Marketing Presentation & Image -->
+        <div class="flex flex-col space-y-8 text-center lg:text-left">
+            <!-- Headline -->
+            <h1 class="text-4xl md:text-5xl font-extrabold text-white mb-6">
+                Construa sua <span class="text-yellow-500">Fortaleza Financeira</span>
+            </h1>
 
-            <!-- Right Column: Chat Widget -->
-            <div class="w-full max-w-lg mx-auto lg:max-w-none lg:mx-0 shadow-2xl rounded-2xl">
-                 <ChatWidget bind:currentTier userId={userId} />
+            <!-- Image -->
+            <img
+                src="/Perfil Oficial Andre Digital.png"
+                alt="Perfil Oficial Andre Digital"
+                class="rounded-2xl shadow-2xl mb-8 w-full max-w-md object-cover self-center lg:self-start"
+            />
+
+            <!-- Pitch -->
+            <p class="text-lg md:text-xl text-gray-300 leading-relaxed max-w-2xl mx-auto lg:mx-0">
+                <!-- TODO: Insert exact Portuguese pitch here. Using existing intro as placeholder. -->
+                Converse com nosso Agente de Inteligência Artificial para descobrir sua estratégia ideal de autocustódia e segurança financeira.
+            </p>
+
+             <!-- Mobile Call to Action Arrow (Visual cue) -->
+             <div class="lg:hidden flex justify-center text-dolarize-gold animate-bounce pt-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                </svg>
             </div>
         </div>
 
-        <!-- Value Proposition Section -->
-        <div class="mt-24 lg:mt-32 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Right Column: Chat Widget -->
+        <div class="w-full max-w-lg mx-auto lg:max-w-none lg:mx-0 shadow-2xl rounded-2xl">
+             <ChatWidget bind:currentTier userId={userId} />
+        </div>
+
+    </div>
+
+    <!-- Value Proposition Section -->
+    <div class="max-w-7xl mx-auto px-6 pb-12 lg:pb-24">
+        <div class="mt-12 lg:mt-24 grid grid-cols-1 md:grid-cols-3 gap-8">
             <!-- Benefit 1: Segurança -->
             <div class="bg-dolarize-card/50 backdrop-blur-sm p-8 rounded-2xl border border-white/5 hover:border-dolarize-gold/30 transition-all duration-300 hover:-translate-y-1">
                 <div class="w-12 h-12 bg-dolarize-gold/10 rounded-xl flex items-center justify-center mb-6 text-dolarize-gold">

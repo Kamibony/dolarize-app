@@ -9,26 +9,31 @@ from database import FirestoreClient
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Define the Base System Prompt for "André Digital"
-SYSTEM_PROMPT = """
+DEFAULT_IDENTITY = """
 1. IDENTIDADE E MISSÃO (CAP. 5)
 Você é o "André Digital", a Extensão Oficial da Autoridade e do Método Dólarize 2.0.
 Sua missão: Conduzir com clareza, segurança e estrutura. Regular a ansiedade do aluno/lead. Proteger a sequência de aprendizado.
 Você NÃO é um assistente genérico. Você é um Mentor Estruturador.
+"""
 
+DEFAULT_PERSONALITY = """
 2. PERSONALIDADE E TOM DE VOZ (CAP. 5)
 - Tom: Calmo, didático, direto, seguro e objetivo.
 - Estilo: Frases curtas. Sem emojis exagerados. Sem promessas vazias.
 - Postura: Autoridade tranquila. "Conduzir mais. Explicar menos."
 - Mantra: "Segurança não é promessa. Segurança é estrutura."
+"""
 
+DEFAULT_NUCLEAR = """
 3. LIMITES ABSOLUTOS (HARD RULES - O QUE VOCÊ NUNCA FAZ)
 - JAMAIS dê opinião sobre preço de ativos ou faça previsões de mercado (ex: "o dólar vai subir?").
 - JAMAIS incentive "trade", day-trade ou operações de curto prazo.
 - JAMAIS negocie o valor do método ou ofereça descontos/atalhos.
 - JAMAIS encerre uma resposta sem um PRÓXIMO PASSO claro (uma pergunta ou ação).
 - JAMAIS prometa lucro ou retorno financeiro garantido.
+"""
 
+DEFAULT_LOGIC = """
 4. ÁRVORE DE DECISÃO INTERNA (CAP. 7 - SIGA ESTA ORDEM)
 Ao receber uma mensagem, classifique a intenção e aplique a lógica:
 
@@ -106,6 +111,9 @@ Aula 3.3: O que é Autocustódia. A regra de ouro da "Recovery Phrase" (nunca ti
 
 Instruction for the Agent: "Se a dúvida for sobre como fazer Pix, diga: 'No Módulo 2, Aula 2.2, eu te mostro a tela exata para fazer o Pix e converter para USDC. Dá uma olhada lá e me avise se travar!'."
 """
+
+# Define the Base System Prompt for "André Digital"
+SYSTEM_PROMPT = DEFAULT_IDENTITY + DEFAULT_PERSONALITY + DEFAULT_NUCLEAR + DEFAULT_LOGIC
 
 def initialize_genai() -> bool:
     """
@@ -208,38 +216,55 @@ class AgentCore:
 
         knowledge_files = []
         persona_files = []
-        core_prompt = SYSTEM_PROMPT # Default fallback
+
+        # Build Base Prompt dynamically
+        personality_text = DEFAULT_PERSONALITY
+        nuclear_text = DEFAULT_NUCLEAR
+
+        if self.db:
+            try:
+                # Objective 2: Use smart config loader for Personality & Nuclear
+                personality_text = self.db.get_config_content('personality', DEFAULT_PERSONALITY)
+                nuclear_text = self.db.get_config_content('nuclear', DEFAULT_NUCLEAR)
+            except Exception as e:
+                logger.error(f"Error fetching config content: {e}")
+
+        core_prompt = DEFAULT_IDENTITY + "\n\n" + personality_text + "\n\n" + nuclear_text + "\n\n" + DEFAULT_LOGIC
+
         video_prompt_section = ""
         self.video_catalogue = {} # Reset
         tools_list = []
 
         if self.db:
             try:
-                # Fetch Dynamic Core Prompt
-                dynamic_prompt = self.db.get_core_prompt()
-                if dynamic_prompt and len(dynamic_prompt.strip()) > 0:
-                    core_prompt = dynamic_prompt
-                    logger.info("Using Dynamic Core Prompt from Firestore.")
-                else:
-                    logger.info("Using Hardcoded Default Core Prompt.")
+                # Fetch Dynamic Core Prompt (Legacy Override - Optional)
+                # If a user manually set a full override, we might respect it, but generally we prefer the modular approach now.
+                # dynamic_prompt = self.db.get_core_prompt()
+                # if dynamic_prompt and len(dynamic_prompt.strip()) > 0:
+                #    core_prompt = dynamic_prompt
+                #    logger.info("Using Dynamic Core Prompt from Firestore (Full Override).")
 
                 # Get list of file records from Firestore
                 # We get all files and separate them
                 file_records = self.db.get_knowledge_files()
 
                 for record in file_records:
-                    file_name = record.get("name") # Gemini file name 'files/xyz'
-                    file_type = record.get("type", "knowledge")
+                    # Objective 3: Robust RAG Loading
+                    try:
+                        file_name = record.get("name") # Gemini file name 'files/xyz'
+                        file_type = record.get("type", "knowledge")
 
-                    if file_name:
-                         try:
-                             file_obj = genai.get_file(file_name)
-                             if file_type == "persona":
-                                 persona_files.append(file_obj)
-                             else:
-                                 knowledge_files.append(file_obj)
-                         except Exception as e:
-                             logger.error(f"Error retrieving file {file_name} from Gemini: {e}")
+                        if file_name:
+                             try:
+                                 file_obj = genai.get_file(file_name)
+                                 if file_type == "persona":
+                                     persona_files.append(file_obj)
+                                 else:
+                                     knowledge_files.append(file_obj)
+                             except Exception as e:
+                                 logger.error(f"Error retrieving file {file_name} from Gemini: {e}")
+                    except Exception as e:
+                        logger.error(f"Error processing RAG file record {record}: {e}")
 
                 # Fetch Videos for Tool Calling
                 try:

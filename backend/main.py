@@ -9,7 +9,12 @@ import os
 import datetime
 import shutil
 import tempfile
+import logging
 import google.generativeai as genai
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Dolarize API", version="1.0.0")
 
@@ -53,7 +58,7 @@ def process_background_tasks(user_id: str, message: str, history: List[Dict[str,
                 email=contact_info.get("email")
             )
     except Exception as e:
-        print(f"Error in background entity extraction: {e}")
+        logger.error(f"Error in background entity extraction: {e}", exc_info=True)
 
     # 2. Lead Qualification
     try:
@@ -63,7 +68,7 @@ def process_background_tasks(user_id: str, message: str, history: List[Dict[str,
             analysis["id"] = user_id
             db.save_user(analysis)
     except Exception as e:
-        print(f"Error in background lead qualification: {e}")
+        logger.error(f"Error in background lead qualification: {e}", exc_info=True)
 
     # 3. Hot Lead Notification
     try:
@@ -81,10 +86,10 @@ def process_background_tasks(user_id: str, message: str, history: List[Dict[str,
 
             if is_hot and email:
                  # Trigger Notification
-                 print(f"🔥 HOT LEAD ALERT: {name} ({email}) has been classified as PERFIL A.")
+                 logger.info(f"🔥 HOT LEAD ALERT: {name} ({email}) has been classified as PERFIL A.")
                  # Future: Send SMTP email here
     except Exception as e:
-        print(f"Error in hot lead notification: {e}")
+        logger.error(f"Error in hot lead notification: {e}", exc_info=True)
 
 @app.get("/")
 async def root():
@@ -159,7 +164,7 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
         return ChatResponse(response=response_text, user_tier=user_tier)
     except Exception as e:
-        print(f"Error in chat endpoint: {e}")
+        logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/admin/users/{user_id}/toggle-bot")
@@ -210,7 +215,7 @@ async def trigger_followup(request: FollowUpRequest):
 
         return {"message": f"Follow-up process completed. Processed {processed_count} users."}
     except Exception as e:
-        print(f"Error in follow-up endpoint: {e}")
+        logger.error(f"Error in follow-up endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/users", response_model=List[Dict[str, Any]])
@@ -228,7 +233,7 @@ async def get_dashboard_stats():
     try:
         return db.get_dashboard_stats()
     except Exception as e:
-        print(f"Error in stats endpoint: {e}")
+        logger.error(f"Error in stats endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/users/{user_id}/history", response_model=List[Dict[str, Any]])
@@ -288,7 +293,7 @@ async def upload_knowledge_file(file: UploadFile = File(...), file_type: str = F
                 os.remove(tmp_path)
 
     except Exception as e:
-        print(f"Error uploading file: {e}")
+        logger.error(f"Error uploading file: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/knowledge/files")
@@ -312,7 +317,7 @@ async def delete_knowledge_file(file_id: str):
             try:
                 genai.delete_file(gemini_name)
             except Exception as e:
-                print(f"Warning: Failed to delete file from Gemini (might be already deleted): {e}")
+                logger.warning(f"Warning: Failed to delete file from Gemini (might be already deleted): {e}")
 
         # 3. Delete from Firestore
         db.delete_knowledge_file(file_id)
@@ -324,7 +329,7 @@ async def delete_knowledge_file(file_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error deleting file: {e}")
+        logger.error(f"Error deleting file: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # Core Prompt Management Endpoints
@@ -344,7 +349,7 @@ async def get_core_prompt():
             current_prompt = SYSTEM_PROMPT
         return {"prompt": current_prompt}
     except Exception as e:
-        print(f"Error getting core prompt: {e}")
+        logger.error(f"Error getting core prompt: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/admin/config/core-prompt")
@@ -361,7 +366,7 @@ async def update_core_prompt(config: ConfigUpdate):
 
         return {"message": "Core prompt updated successfully"}
     except Exception as e:
-        print(f"Error updating core prompt: {e}")
+        logger.error(f"Error updating core prompt: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/admin/config/core-prompt/reset")
@@ -378,7 +383,7 @@ async def reset_core_prompt():
 
         return {"message": "Core prompt reset to factory default"}
     except Exception as e:
-        print(f"Error resetting core prompt: {e}")
+        logger.error(f"Error resetting core prompt: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # Video Management Endpoints
@@ -406,7 +411,7 @@ async def add_video(video: VideoRequest):
 
         return {"id": video_id, **video_data}
     except Exception as e:
-        print(f"Error adding video: {e}")
+        logger.error(f"Error adding video: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/admin/videos/{video_id}")
@@ -421,7 +426,7 @@ async def update_video(video_id: str, video: VideoRequest):
 
         return {"id": video_id, **video_data}
     except Exception as e:
-        print(f"Error updating video: {e}")
+        logger.error(f"Error updating video: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/admin/videos/{video_id}")
@@ -434,7 +439,7 @@ async def delete_video(video_id: str):
 
         return {"message": "Video deleted successfully"}
     except Exception as e:
-        print(f"Error deleting video: {e}")
+        logger.error(f"Error deleting video: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

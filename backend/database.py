@@ -51,6 +51,32 @@ class FirestoreClient:
         doc_ref.set(user_data, merge=True)
         return user_id
 
+    def save_lead(self, user_data: Dict[str, Any]) -> str:
+        """
+        Saves or updates a lead profile in the 'usuarios' collection with smart merge logic.
+
+        It ensures that existing data is not overwritten by None values.
+
+        Args:
+            user_data: A dictionary containing user information. Must include 'id'.
+
+        Returns:
+            The user_id.
+        """
+        user_id = user_data.get("id")
+        if not user_id:
+            raise ValueError("User ID is required in user_data")
+
+        # Smart Merge: Remove keys with None values to avoid overwriting existing data with null
+        clean_data = {k: v for k, v in user_data.items() if v is not None}
+
+        if not clean_data:
+            return user_id  # Nothing to update
+
+        doc_ref = self.db.collection("usuarios").document(user_id)
+        doc_ref.set(clean_data, merge=True)
+        return user_id
+
     def update_user_interaction(self, user_id: str, reset_followup_count: bool = False, increment_followup_count: bool = False) -> None:
         """
         Updates the last_interaction_timestamp for a user.

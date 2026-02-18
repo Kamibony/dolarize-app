@@ -75,3 +75,13 @@ def test_parse_pdf_upload_no_display_name(mock_genai):
     assert kwargs['path'] == "dummy.pdf"
     assert kwargs['mime_type'] == "application/pdf"
     assert kwargs['display_name'] == "dummy.pdf" # basename fallback
+
+def test_unsupported_mime_type():
+    with pytest.raises(ValueError, match="Unsupported MIME type"):
+        FileParser.parse_file("dummy.xyz", "application/x-unsupported")
+
+def test_docx_parse_error(mock_docx):
+    mock_docx.side_effect = Exception("Corrupt file")
+
+    with pytest.raises(ValueError, match="Failed to parse DOCX"):
+        FileParser.parse_file("dummy.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")

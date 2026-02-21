@@ -781,12 +781,12 @@
                                         <td class="p-4 text-gray-400 hidden md:table-cell max-w-[150px] truncate" title={user.dor_principal}>{user.dor_principal || '-'}</td>
                                         <td class="p-4 text-gray-400 hidden md:table-cell capitalize">{user.maturidade || '-'}</td>
                                         <td class="p-4 text-right">
-                                            <button
-                                                class="text-[10px] font-bold text-dolarize-gold hover:text-white uppercase tracking-wider px-3 py-1.5 border border-dolarize-gold/30 rounded hover:bg-dolarize-gold/10 transition-all hover:border-dolarize-gold/80"
-                                                on:click={() => selectUser(user)}
+                                            <a
+                                                href={`/admin/lead/${user.id}`}
+                                                class="text-[10px] font-bold text-dolarize-gold hover:text-white uppercase tracking-wider px-3 py-1.5 border border-dolarize-gold/30 rounded hover:bg-dolarize-gold/10 transition-all hover:border-dolarize-gold/80 inline-block"
                                             >
                                                 Inspecionar
-                                            </button>
+                                            </a>
                                         </td>
                                     </tr>
                                     {/each}

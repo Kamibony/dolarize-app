@@ -565,6 +565,60 @@ class AgentCore:
             logger.error(f"Error analyzing lead: {e}")
             return {}
 
+    def analyze_lead_strategy(self, history: List[Dict[str, str]]) -> Dict[str, Any]:
+        """
+        Analyzes the chat history to generate strategic insights: summary, objection, and sales angle.
+        """
+        if not is_genai_configured or self.model is None:
+            return {}
+
+        strategy_prompt = """
+        ANÁLISE ESTRATÉGICA DE VENDAS - INTERNO
+        Com base no histórico da conversa, gere os seguintes insights para o time de vendas:
+
+        1. Resumo (summary): Um resumo de 3 frases da interação até agora.
+        2. Objeção Principal (objection): Por que o lead ainda não comprou? (Ex: Preço, Medo, Falta de tempo, Desconfiança).
+        3. Ângulo de Venda (sales_angle): Como o vendedor humano deve abordar este lead para fechar a venda? (Seja específico e tático).
+
+        Responda APENAS em formato JSON estrito:
+        {
+            "summary": "...",
+            "objection": "...",
+            "sales_angle": "..."
+        }
+        """
+
+        try:
+            full_prompt = "Histórico da conversa:\n"
+            for msg in history:
+                role = "Usuário" if msg["role"] == "user" else "André"
+                # Handle parts being a list or string just in case
+                parts = msg.get("parts", "")
+                content = parts[0] if isinstance(parts, list) and parts else str(parts)
+                full_prompt += f"{role}: {content}\n"
+
+            full_prompt += f"\n{strategy_prompt}"
+
+            response = self.model.generate_content(full_prompt)
+
+            import json
+            import re
+
+            text = response.text
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                return json.loads(match.group(0))
+            else:
+                return json.loads(text)
+
+        except Exception as e:
+            logger.error(f"Error analyzing lead strategy: {e}")
+            return {
+                "summary": "Erro ao gerar análise.",
+                "objection": "Não identificado.",
+                "sales_angle": "Verifique o histórico manualmente."
+            }
+
     def generate_followup_message(self, user_profile: Dict[str, Any]) -> str:
         """
         Generates a follow-up message for a user based on their profile.

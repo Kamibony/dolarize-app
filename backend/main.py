@@ -569,6 +569,66 @@ async def delete_video(video_id: str):
         logger.error(f"Error deleting video: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/admin/lead/{user_id}/insights")
+async def get_lead_insights(user_id: str):
+    try:
+        # 1. Get User
+        user = db.get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # 2. Check for existing insights
+        # Stored as top-level keys with 'insights_' prefix
+        has_insights = user.get("insights_summary") and user.get("insights_objection") and user.get("insights_sales_angle")
+
+        insights = {
+            "summary": user.get("insights_summary"),
+            "objection": user.get("insights_objection"),
+            "sales_angle": user.get("insights_sales_angle")
+        }
+
+        # 3. Fetch History (needed for timeline anyway)
+        raw_history = db.get_chat_history(user_id, limit=50)
+
+        # If missing insights and we have history, generate them
+        if not has_insights and raw_history:
+            # Format history for Agent
+            gemini_history = agent.format_history(raw_history)
+
+            # Run Analysis (in threadpool to avoid blocking)
+            new_insights = await run_in_threadpool(agent.analyze_lead_strategy, gemini_history)
+
+            # Save to DB
+            if new_insights:
+                update_data = {
+                    "id": user_id,
+                    "insights_summary": new_insights.get("summary"),
+                    "insights_objection": new_insights.get("objection"),
+                    "insights_sales_angle": new_insights.get("sales_angle"),
+                    "insights_generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }
+                db.save_user(update_data)
+
+                # Update local variable
+                insights = {
+                    "summary": new_insights.get("summary"),
+                    "objection": new_insights.get("objection"),
+                    "sales_angle": new_insights.get("sales_angle")
+                }
+
+        # 4. Return Composite Object
+        return {
+            "user": user,
+            "insights": insights,
+            "history": raw_history
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching lead insights: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

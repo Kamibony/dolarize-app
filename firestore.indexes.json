@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "follow_up_queue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "trigger_time",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "interacoes_chat",
       "queryScope": "COLLECTION",
       "fields": [
@@ -11,6 +25,34 @@
         {
           "fieldPath": "timestamp",
           "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "usuarios",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "last_interaction_timestamp",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "usuarios",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "payment_date",
+          "order": "ASCENDING"
         }
       ]
     }

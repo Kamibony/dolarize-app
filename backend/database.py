@@ -150,9 +150,57 @@ class FirestoreClient:
             "trigger_type": trigger_type,
             "reason": reason,
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "status": "pending"
+            "status": "pending",
+            # Default trigger time to now if not specified (for immediate processing)
+            "trigger_time": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         self.db.collection("follow_up_queue").add(queue_data)
+
+    def add_scheduled_followup(self, user_id: str, trigger_time: str, reason: str, trigger_type: str = "inactivity_check") -> None:
+        """
+        Adds or updates a scheduled follow-up task.
+        Uses a deterministic ID (user_id + trigger_type) to prevent duplicates.
+        """
+        task_id = f"{user_id}_{trigger_type}"
+        task_data = {
+            "user_id": user_id,
+            "trigger_type": trigger_type,
+            "reason": reason,
+            "trigger_time": trigger_time,
+            "status": "pending",
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+        self.db.collection("follow_up_queue").document(task_id).set(task_data, merge=True)
+
+    def get_pending_followups(self, batch_size: int = 50) -> List[Dict[str, Any]]:
+        """
+        Retrieves pending follow-up tasks that are ready to be triggered.
+        Requires a composite index on (status ASC, trigger_time ASC).
+        """
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        query = (
+            self.db.collection("follow_up_queue")
+            .where(field_path="status", op_string="==", value="pending")
+            .where(field_path="trigger_time", op_string="<=", value=now)
+            .order_by("trigger_time")
+            .limit(batch_size)
+        )
+        docs = query.stream()
+        tasks = []
+        for doc in docs:
+            t = doc.to_dict()
+            t["id"] = doc.id
+            tasks.append(t)
+        return tasks
+
+    def mark_followup_processed(self, task_id: str, status: str = "completed") -> None:
+        """
+        Updates the status of a follow-up task.
+        """
+        self.db.collection("follow_up_queue").document(task_id).update({
+            "status": status,
+            "processed_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        })
 
     def get_users_by_status_and_time(self, status: str, time_field: str, hours_ago: int) -> List[Dict[str, Any]]:
         """

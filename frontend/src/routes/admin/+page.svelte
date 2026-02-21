@@ -18,7 +18,7 @@
     let filterProfile = 'all'; // 'all' | 'A' | 'B' | 'C'
 
     // CRM vs KB vs Config vs Videos Mode
-    let mode = 'crm'; // 'crm' | 'kb' | 'config' | 'videos'
+    let mode = 'crm'; // 'crm' | 'kb' | 'config' | 'videos' | 'calendar'
 
     // Knowledge Base State
     let activeKbTab = 'knowledge'; // 'knowledge' | 'persona'
@@ -97,7 +97,37 @@
         } finally {
             isLoadingUsers = false;
         }
+
+        // Check URL params for Calendar Integration Callback
+        const urlParams = new URLSearchParams(window.location.search);
+        const modeParam = urlParams.get('mode');
+        const statusParam = urlParams.get('status');
+
+        if (modeParam) {
+            mode = modeParam;
+        }
+        if (statusParam === 'connected') {
+            // Simple feedback (could be improved)
+            setTimeout(() => alert('Google Agenda conectado com sucesso!'), 500);
+        }
     });
+
+    async function connectCalendar() {
+        try {
+            // For single-tenant MVP, we use a fixed user ID or derived from auth context if available.
+            const userId = 'admin_user';
+            const res = await fetch(`${API_BASE_URL}/admin/calendar/auth?user_id=${userId}`);
+            if (res.ok) {
+                const data = await res.json();
+                window.location.href = data.url;
+            } else {
+                alert('Erro ao obter URL de autenticação.');
+            }
+        } catch (e) {
+            console.error("Calendar auth error:", e);
+            alert('Erro de conexão.');
+        }
+    }
 
     $: {
         applyFilters(filterStatus, filterProfile);
@@ -475,6 +505,12 @@
                 >
                     Nuclear
                 </button>
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'calendar' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'calendar'; selectedUser = null; }}
+                >
+                    Agenda
+                </button>
             </div>
         </div>
 
@@ -504,6 +540,12 @@
                     on:click={() => { mode = 'config'; selectedUser = null; isSidebarOpen = false; }}
                 >
                     Nuc
+                </button>
+                 <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'calendar' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'calendar'; selectedUser = null; isSidebarOpen = false; }}
+                >
+                    Age
                 </button>
             </div>
         </div>
@@ -589,6 +631,15 @@
                     </div>
                     <p>Aqui você edita o "Prompt do Sistema" (System Prompt), que define a identidade e as regras imutáveis do André Digital.</p>
                     <p class="text-xs text-gray-500">Este texto tem precedência sobre todos os arquivos de conhecimento.</p>
+                </div>
+            {:else if mode === 'calendar'}
+                <!-- Calendar Info -->
+                <div class="p-6 text-sm text-gray-400 space-y-4">
+                    <p>Integração de Agenda.</p>
+                    <p>Conecte sua conta do Google para permitir que a IA agende reuniões automaticamente.</p>
+                    <div class="bg-blue-600/20 border border-blue-600/30 p-3 rounded text-xs text-blue-200">
+                        Disponível apenas para leads Perfil A.
+                    </div>
                 </div>
             {/if}
         </div>
@@ -1187,6 +1238,47 @@
                     </button>
                 </div>
             </div>
+        {:else if mode === 'calendar'}
+            <!-- Calendar View -->
+             <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
+                <div class="mb-8">
+                    <h1 class="text-2xl font-bold tracking-tight text-white mb-2">Integração de Agenda</h1>
+                    <p class="text-sm text-gray-400">Gerencie a conexão com seu Google Calendar.</p>
+                </div>
+
+                <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 p-8 shadow-xl max-w-2xl">
+                    <div class="flex items-center gap-6 mb-8">
+                        <div class="p-4 bg-white rounded-full">
+                            <svg class="w-10 h-10 text-blue-600" viewBox="0 0 24 24">
+                                <path fill="currentColor" d="M19,4H18V2H16V4H8V2H6V4H5A2,2 0 0,0 3,6V20A2,2 0 0,0 5,22H19A2,2 0 0,0 21,20V6A2,2 0 0,0 19,4M19,20H5V10H19V20M19,8H5V6H19V8M9,14H7V12H9V14M13,14H11V12H13V14M17,14H15V12H17V14M9,18H7V16H9V18M13,18H11V16H13V18M17,18H15V16H17V18Z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">Google Calendar</h3>
+                            <p class="text-sm text-gray-400 mt-1">Sincronize disponibilidade e agende reuniões automaticamente com leads qualificados.</p>
+                        </div>
+                    </div>
+
+                    <button
+                        on:click={connectCalendar}
+                        class="w-full bg-white text-gray-900 font-bold px-6 py-4 rounded-lg shadow-lg hover:bg-gray-100 hover:scale-105 transition-all flex items-center justify-center gap-3 border border-gray-200"
+                    >
+                        <svg class="w-6 h-6" viewBox="0 0 24 24">
+                            <path fill="currentColor" d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12C5,7.9 4.95,7.73 12.19,7.73C15.29,7.73 17.1,9.14 17.1,9.14L19,7.23C19,7.23 16.32,5 12.19,5C6.24,5 2,9.64 2,12C2,14.36 6.24,19 12.19,19C17.14,19 21.65,15.7 21.35,11.1Z" />
+                        </svg>
+                        Conectar Google Agenda
+                    </button>
+
+                    <div class="mt-8 p-4 bg-dolarize-blue-glow/10 rounded border border-dolarize-blue-glow/30">
+                        <h4 class="text-xs font-bold uppercase text-blue-300 mb-2">Como funciona:</h4>
+                        <ul class="text-sm text-gray-400 space-y-2 list-disc pl-4">
+                            <li>O André Digital consulta seus horários livres em tempo real.</li>
+                            <li>Apenas leads com classificação <strong>Perfil A (Quente)</strong> recebem ofertas de agendamento.</li>
+                            <li>O evento é criado automaticamente com link do Google Meet.</li>
+                        </ul>
+                    </div>
+                </div>
+             </div>
         {/if}
     </main>
 </div>

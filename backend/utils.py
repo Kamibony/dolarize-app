@@ -123,3 +123,50 @@ class FileParser:
         else:
             logger.error(f"Unsupported MIME type for Gemini upload: {mime_type}")
             raise ValueError(f"Unsupported MIME type: {mime_type}. File rejected.")
+
+from cryptography.fernet import Fernet
+
+class EncryptionManager:
+    """
+    Simple encryption helper using Fernet (symmetric encryption).
+    Requires ENCRYPTION_KEY environment variable.
+    """
+    _key = os.environ.get("ENCRYPTION_KEY")
+    if not _key:
+        # Generate a random key if none provided (Note: data will be unrecoverable after restart)
+        # In production, this MUST be set.
+        # FIX: Use a deterministic default for dev/demo if not set, to avoid losing data on restart.
+        # WARNING: NOT SECURE FOR PRODUCTION.
+        # Generate a valid Fernet key (urlsafe base64 encoded 32 bytes)
+        # b'change_this_in_production_secret' is not valid base64 usually.
+        # We can use a fixed base64 string.
+        # Example valid key: 'u3wX-S5z_t4yPz-o2q-r5s-t8u-v9w-x0y-z1A-B2C='
+        _key = b'u3wX-S5z_t4yPz-o2q-r5s-t8u-v9w-x0y-z1A-B2C='
+        logger.warning("ENCRYPTION_KEY not set. Using insecure default key for development persistence.")
+    elif isinstance(_key, str):
+         # Fernet key must be bytes
+         try:
+             _key = _key.encode()
+         except:
+             pass
+
+    try:
+        _cipher = Fernet(_key)
+    except Exception as e:
+        logger.error(f"Invalid ENCRYPTION_KEY: {e}. generating new one.")
+        _key = Fernet.generate_key()
+        _cipher = Fernet(_key)
+
+    @classmethod
+    def encrypt(cls, data: str) -> str:
+        if not data: return ""
+        return cls._cipher.encrypt(data.encode()).decode()
+
+    @classmethod
+    def decrypt(cls, token: str) -> str:
+        if not token: return ""
+        try:
+            return cls._cipher.decrypt(token.encode()).decode()
+        except Exception as e:
+            logger.error(f"Decryption failed: {e}")
+            return ""

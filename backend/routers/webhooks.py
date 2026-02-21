@@ -11,6 +11,7 @@ import datetime
 from agent_core import agent
 from database import FirestoreClient
 from services.meta_service import meta_service
+import stripe
 
 # Initialize Router
 router = APIRouter()
@@ -22,6 +23,11 @@ db = FirestoreClient()
 
 META_VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN")
 META_APP_SECRET = os.environ.get("META_APP_SECRET")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY")
+
+if STRIPE_API_KEY:
+    stripe.api_key = STRIPE_API_KEY
 
 async def verify_signature(request: Request) -> bytes:
     """
@@ -87,6 +93,98 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(process_meta_payload, payload)
 
     return {"status": "ok"}
+
+@router.post("/webhook/stripe")
+async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Receives webhook events from Stripe.
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("Stripe-Signature")
+
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.warning("STRIPE_WEBHOOK_SECRET not set. Skipping verification (INSECURE - DEV ONLY).")
+        # In prod, raise error
+        try:
+             event = json.loads(payload)
+        except:
+             raise HTTPException(status_code=400, detail="Invalid JSON")
+    else:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError as e:
+            # Invalid payload
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        except stripe.error.SignatureVerificationError as e:
+            # Invalid signature
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Delegate to background task
+    background_tasks.add_task(process_stripe_event, event)
+
+    return {"status": "success"}
+
+async def process_stripe_event(event: Dict[str, Any]):
+    """
+    Processes Stripe events asynchronously.
+    """
+    try:
+        event_type = event.get("type")
+        data = event.get("data", {}).get("object", {})
+
+        if event_type == "checkout.session.completed":
+            logger.info("Processing checkout.session.completed")
+
+            # Extract customer details
+            customer_email = data.get("customer_details", {}).get("email")
+            customer_name = data.get("customer_details", {}).get("name")
+
+            # Metadata might contain user_id if we passed it during checkout creation
+            metadata = data.get("metadata", {})
+            user_id = metadata.get("user_id")
+
+            if customer_email:
+                timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+                # Update logic
+                updated = False
+
+                # 1. Try updating by ID if provided
+                if user_id:
+                     user = db.get_user(user_id)
+                     if user:
+                         db.save_user({
+                             "id": user_id,
+                             "status": "Aluno",
+                             "payment_date": timestamp,
+                             "payment_provider": "stripe"
+                         })
+                         updated = True
+                         logger.info(f"User {user_id} upgraded to Aluno via ID.")
+
+                # 2. If not updated by ID, try by Email
+                if not updated:
+                    updated = db.update_user_status_by_email(
+                        email=customer_email,
+                        status="Aluno",
+                        additional_data={
+                            "payment_date": timestamp,
+                            "payment_provider": "stripe",
+                            "nome": customer_name # Update name if available
+                        }
+                    )
+                    if updated:
+                        logger.info(f"User {customer_email} upgraded to Aluno via Email.")
+                    else:
+                        logger.warning(f"Payment received for {customer_email} but user not found in DB.")
+                        # Optional: Create a new user placeholder?
+                        # For now, we log it.
+
+    except Exception as e:
+        logger.error(f"Error processing Stripe event: {e}", exc_info=True)
+
 
 async def process_meta_payload(payload: Dict[str, Any]):
     """

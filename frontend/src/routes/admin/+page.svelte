@@ -3,11 +3,19 @@
     import { fade } from 'svelte/transition';
 
     let users = [];
+    let filteredUsers = [];
     let selectedUser = null;
     let chatHistory = [];
     let isLoadingUsers = true;
     let isLoadingHistory = false;
     let dashboardStats = null;
+
+    // Mobile Sidebar
+    let isSidebarOpen = false;
+
+    // Filters
+    let filterStatus = 'all'; // 'all' | 'Interessado' | 'Aluno'
+    let filterProfile = 'all'; // 'all' | 'A' | 'B' | 'C'
 
     // CRM vs KB vs Config vs Videos Mode
     let mode = 'crm'; // 'crm' | 'kb' | 'config' | 'videos'
@@ -33,15 +41,48 @@
     let videoForm = { id: null, title: '', url: '', trigger_context: '' };
     let isEditingVideo = false;
 
+    // Configuration
+    const API_BASE_URL = import.meta.env.PUBLIC_API_URL || 'https://dolarize-api-493794054971.us-central1.run.app';
+
+    // YouTube Ingestion
+    let youtubeUrl = '';
+    let isIngestingYoutube = false;
+    let youtubeStatus = null;
+
+    async function ingestYoutube() {
+        if (!youtubeUrl) return;
+        isIngestingYoutube = true;
+        youtubeStatus = null;
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/knowledge/youtube`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: youtubeUrl })
+            });
+            if (res.ok) {
+                 youtubeStatus = { type: 'success', message: 'Vídeo processado e adicionado à base de conhecimento.' };
+                 youtubeUrl = '';
+            } else {
+                 const err = await res.json();
+                 youtubeStatus = { type: 'error', message: err.detail || 'Erro ao processar vídeo.' };
+            }
+        } catch (e) {
+            youtubeStatus = { type: 'error', message: 'Erro de conexão.' };
+        } finally {
+            isIngestingYoutube = false;
+        }
+    }
+
     onMount(async () => {
         try {
             const [usersRes, statsRes] = await Promise.all([
-                fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/users'),
-                fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/stats')
+                fetch(`${API_BASE_URL}/admin/users`),
+                fetch(`${API_BASE_URL}/admin/stats`)
             ]);
 
             if (usersRes.ok) {
                 users = await usersRes.json();
+                applyFilters();
             } else {
                 console.error("Failed to fetch users");
             }
@@ -58,6 +99,28 @@
         }
     });
 
+    $: {
+        applyFilters(filterStatus, filterProfile);
+    }
+
+    function applyFilters() {
+        filteredUsers = users.filter(user => {
+            // Status Filter
+            // Note: We use 'classificacao_lead' or 'status' if available.
+            // If checking 'status' field (which we added in backend), we need to handle legacy.
+            // Assuming 'Interessado' is default if no status.
+            const userStatus = user.status || 'Interessado';
+            if (filterStatus !== 'all' && userStatus !== filterStatus) return false;
+
+            // Profile Filter (A, B, C)
+            // classificacao_lead is like "A - Quente"
+            const profile = user.classificacao_lead ? user.classificacao_lead.charAt(0) : '';
+            if (filterProfile !== 'all' && profile !== filterProfile) return false;
+
+            return true;
+        });
+    }
+
     // Fetch data based on mode
     $: if (mode === 'kb') {
         fetchFiles();
@@ -71,7 +134,7 @@
         isLoadingPrompt = true;
         promptStatus = '';
         try {
-            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/config/core-prompt');
+            const res = await fetch(`${API_BASE_URL}/admin/config/core-prompt`);
             if (res.ok) {
                 const data = await res.json();
                 corePromptText = data.prompt;
@@ -91,7 +154,7 @@
         isSavingPrompt = true;
         promptStatus = '';
         try {
-            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/config/core-prompt', {
+            const res = await fetch(`${API_BASE_URL}/admin/config/core-prompt`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: corePromptText })
@@ -116,7 +179,7 @@
         isSavingPrompt = true; // Use same loading state
         promptStatus = '';
         try {
-            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/config/core-prompt/reset', {
+            const res = await fetch(`${API_BASE_URL}/admin/config/core-prompt/reset`, {
                 method: 'POST'
             });
 
@@ -137,7 +200,7 @@
     async function fetchFiles() {
         isLoadingFiles = true;
         try {
-            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/files?type=${activeKbTab}`);
+            const res = await fetch(`${API_BASE_URL}/admin/knowledge/files?type=${activeKbTab}`);
             if (res.ok) {
                 knowledgeFiles = await res.json();
             } else {
@@ -167,7 +230,7 @@
         formData.append('file_type', activeKbTab);
 
         try {
-            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/upload', {
+            const res = await fetch(`${API_BASE_URL}/admin/knowledge/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -192,7 +255,7 @@
         if (!confirm('Tem certeza que deseja excluir este arquivo? A IA deixará de utilizá-lo.')) return;
 
         try {
-            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/knowledge/files/${fileId}`, {
+            const res = await fetch(`${API_BASE_URL}/admin/knowledge/files/${fileId}`, {
                 method: 'DELETE'
             });
 
@@ -212,7 +275,7 @@
         isLoadingHistory = true;
         chatHistory = [];
         try {
-            const response = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/users/${user.id}/history`);
+            const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}/history`);
             if (response.ok) {
                 const historyData = await response.json();
 
@@ -248,7 +311,7 @@
         const newStatus = !user.bot_paused;
 
         try {
-            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/users/${user.id}/toggle-bot`, {
+            const res = await fetch(`${API_BASE_URL}/admin/users/${user.id}/toggle-bot`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paused: newStatus })
@@ -273,7 +336,7 @@
     async function fetchVideos() {
         isLoadingVideos = true;
         try {
-            const res = await fetch('https://dolarize-api-493794054971.us-central1.run.app/admin/videos');
+            const res = await fetch(`${API_BASE_URL}/admin/videos`);
             if (res.ok) {
                 videos = await res.json();
             } else {
@@ -306,8 +369,8 @@
         try {
             const method = videoForm.id ? 'PUT' : 'POST';
             const url = videoForm.id
-                ? `https://dolarize-api-493794054971.us-central1.run.app/admin/videos/${videoForm.id}`
-                : 'https://dolarize-api-493794054971.us-central1.run.app/admin/videos';
+                ? `${API_BASE_URL}/admin/videos/${videoForm.id}`
+                : `${API_BASE_URL}/admin/videos`;
 
             const res = await fetch(url, {
                 method: method,
@@ -337,7 +400,7 @@
         if (!confirm('Tem certeza que deseja excluir este vídeo?')) return;
 
         try {
-            const res = await fetch(`https://dolarize-api-493794054971.us-central1.run.app/admin/videos/${videoId}`, {
+            const res = await fetch(`${API_BASE_URL}/admin/videos/${videoId}`, {
                 method: 'DELETE'
             });
 
@@ -354,9 +417,31 @@
 </script>
 
 <div class="flex h-screen bg-dolarize-dark text-white font-sans overflow-hidden">
+    <!-- Mobile Header -->
+    <div class="md:hidden flex items-center justify-between p-4 border-b border-dolarize-blue-glow/20 bg-dolarize-dark z-20">
+        <div class="flex items-center gap-2">
+            <h1 class="text-lg font-bold tracking-tight text-white">Admin</h1>
+        </div>
+        <button on:click={() => isSidebarOpen = !isSidebarOpen} class="text-gray-300 hover:text-white">
+            {#if isSidebarOpen}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                </svg>
+            {/if}
+        </button>
+    </div>
+
     <!-- Sidebar / Master View -->
-    <aside class="w-1/3 min-w-[300px] border-r border-dolarize-blue-glow/20 bg-dolarize-dark/95 flex flex-col">
-        <div class="p-6 border-b border-dolarize-blue-glow/20">
+    <aside class={`
+        absolute inset-0 z-10 bg-dolarize-dark/95 flex flex-col transition-transform duration-300 transform
+        md:relative md:w-1/3 md:min-w-[300px] md:border-r md:border-dolarize-blue-glow/20 md:translate-x-0
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+    `}>
+        <div class="p-6 border-b border-dolarize-blue-glow/20 hidden md:block">
             <div class="flex items-center gap-2 mb-4 cursor-pointer" on:click={() => { selectedUser = null; mode = 'crm'; }}>
                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-dolarize-gold">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
@@ -393,19 +478,64 @@
             </div>
         </div>
 
+        <!-- Mobile Navigation Tabs (visible inside sidebar on mobile) -->
+         <div class="p-4 md:p-0 md:hidden bg-black/20 md:bg-transparent rounded-none md:rounded-lg mb-4 md:mb-0">
+             <div class="flex space-x-1 p-1 rounded-lg">
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'crm' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'crm'; selectedUser = null; isSidebarOpen = false; }}
+                >
+                    CRM
+                </button>
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'videos' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'videos'; selectedUser = null; isSidebarOpen = false; }}
+                >
+                    Vídeos
+                </button>
+                <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'kb' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'kb'; selectedUser = null; isSidebarOpen = false; }}
+                >
+                    KB
+                </button>
+                 <button
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'config' ? 'bg-red-500 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    on:click={() => { mode = 'config'; selectedUser = null; isSidebarOpen = false; }}
+                >
+                    Nuc
+                </button>
+            </div>
+        </div>
+
         <div class="flex-1 overflow-y-auto custom-scrollbar">
             {#if mode === 'crm'}
+                <!-- Filters -->
+                <div class="p-4 border-b border-gray-800 flex gap-2">
+                    <select bind:value={filterProfile} class="bg-black/20 text-xs text-gray-300 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-dolarize-gold w-1/2">
+                        <option value="all">Perfil: Todos</option>
+                        <option value="A">Perfil A (Quente)</option>
+                        <option value="B">Perfil B (Morno)</option>
+                        <option value="C">Perfil C (Frio)</option>
+                    </select>
+                    <select bind:value={filterStatus} class="bg-black/20 text-xs text-gray-300 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-dolarize-gold w-1/2">
+                        <option value="all">Status: Todos</option>
+                        <option value="Interessado">Interessado</option>
+                        <option value="Aluno">Aluno</option>
+                    </select>
+                </div>
+
                 {#if isLoadingUsers}
                     <div class="p-6 text-center text-gray-500 animate-pulse">Carregando leads...</div>
-                {:else if users.length === 0}
+                {:else if filteredUsers.length === 0}
                     <div class="p-6 text-center text-gray-500">Nenhum usuário encontrado.</div>
                 {:else}
                     <ul class="divide-y divide-gray-800/50">
-                        {#each users as user}
+                        {#each filteredUsers as user}
                             <li>
                                 <button
                                     class={`w-full text-left p-4 hover:bg-white/5 transition-colors ${selectedUser?.id === user.id ? 'bg-white/5 border-l-4 border-dolarize-gold' : 'border-l-4 border-transparent'}`}
-                                    on:click={() => selectUser(user)}
+                                    on:click={() => { selectUser(user); isSidebarOpen = false; }}
                                 >
                                     <div class="flex justify-between items-start mb-1">
                                         <span class="font-semibold text-white truncate pr-2">{user.nome || 'Usuário Sem Nome'}</span>
@@ -492,10 +622,22 @@
                             </button>
                         </div>
                         <p class="text-sm text-gray-400">{selectedUser.telefone || 'Sem telefone'}</p>
+                         {#if selectedUser.dor_principal}
+                            <div class="mt-2 text-xs text-gray-300 italic">
+                                <span class="text-dolarize-gold/70 font-bold not-italic mr-1">Dor:</span>
+                                "{selectedUser.dor_principal}"
+                            </div>
+                        {/if}
                     </div>
                     <div class="text-right">
-                         <div class="text-[10px] text-dolarize-gold uppercase tracking-widest font-semibold mb-1">Nível de Acesso</div>
-                         <div class="text-sm text-gray-300 font-medium">{selectedUser.nivel_acesso || 'Desconhecido'}</div>
+                         <div class="text-[10px] text-dolarize-gold uppercase tracking-widest font-semibold mb-1">Status</div>
+                         <span class={`text-xs font-bold px-2 py-1 rounded border ${
+                            selectedUser.status === 'Aluno' ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
+                         }`}>
+                             {selectedUser.status || 'Interessado'}
+                         </span>
+                         <div class="mt-2 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Perfil</div>
+                         <div class="text-sm text-gray-300 font-medium">{selectedUser.classificacao_lead?.split(' - ')[0] || 'N/A'}</div>
                     </div>
                 </header>
 
@@ -592,7 +734,7 @@
                     <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
                         <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
                             <h3 class="text-sm font-bold text-white uppercase tracking-wide">Gerenciamento de Leads</h3>
-                            <span class="text-xs text-gray-400">{users.length} leads encontrados</span>
+                            <span class="text-xs text-gray-400">{filteredUsers.length} leads encontrados</span>
                         </div>
                         <div class="overflow-auto custom-scrollbar flex-1">
                             <table class="w-full text-left border-collapse">
@@ -608,7 +750,7 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-white/5 text-sm">
-                                    {#each users as user}
+                                    {#each filteredUsers as user}
                                     <tr class="hover:bg-white/5 transition-colors group">
                                         <td class="p-4 font-mono text-xs text-gray-500">
                                             {user.id.substring(0, 8)}...
@@ -794,6 +936,12 @@
                             >
                                 Centro de Personalidade
                             </button>
+                            <button
+                                class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'youtube' ? 'bg-red-900/40 text-red-200 shadow ring-1 ring-red-500/50' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                on:click={() => switchKbTab('youtube')}
+                            >
+                                YouTube
+                            </button>
                         </div>
                     </div>
 
@@ -842,14 +990,38 @@
                     </div>
                 {/if}
 
-                <!-- File List -->
-                <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
-                    <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-white uppercase tracking-wide">Arquivos de {activeKbTab === 'persona' ? 'Personalidade' : 'Conhecimento'}</h3>
-                        <span class="text-xs text-gray-400">{knowledgeFiles.length} documentos indexados</span>
+                {#if activeKbTab === 'youtube'}
+                    <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 p-6 shadow-xl mb-8" in:fade>
+                         <h3 class="text-lg font-bold text-white mb-4">Ingestão de Conteúdo (YouTube)</h3>
+                         <div class="flex gap-4">
+                             <input type="text" bind:value={youtubeUrl} placeholder="Cole a URL do vídeo aqui (ex: https://youtube.com/watch?v=...)" class="flex-1 bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors">
+                             <button on:click={ingestYoutube} disabled={isIngestingYoutube} class="px-6 py-2 rounded bg-red-600 text-white font-bold text-sm hover:bg-red-500 transition-colors flex items-center gap-2">
+                                 {#if isIngestingYoutube}
+                                     <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                     <span>Processando...</span>
+                                 {:else}
+                                     Ingerir
+                                 {/if}
+                             </button>
+                         </div>
+                         {#if youtubeStatus}
+                            <div class={`mt-4 text-sm ${youtubeStatus.type === 'error' ? 'text-red-400' : 'text-green-400'}`}>
+                                {youtubeStatus.message}
+                            </div>
+                         {/if}
                     </div>
+                {:else}
+                    <!-- File List -->
+                    <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
+                        <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wide">Arquivos de {activeKbTab === 'persona' ? 'Personalidade' : 'Conhecimento'}</h3>
+                            <span class="text-xs text-gray-400">{knowledgeFiles.length} documentos indexados</span>
+                        </div>
 
-                    {#if isLoadingFiles}
+                        {#if isLoadingFiles}
                         <div class="p-12 text-center text-gray-500 animate-pulse">Carregando arquivos...</div>
                     {:else if knowledgeFiles.length === 0}
                          <div class="p-12 text-center flex flex-col items-center justify-center text-gray-500">
@@ -912,8 +1084,9 @@
                                 </tbody>
                             </table>
                         </div>
-                    {/if}
-                </div>
+                        {/if}
+                    </div>
+                {/if}
              </div>
         {:else if mode === 'config'}
             <!-- Config Mode -->

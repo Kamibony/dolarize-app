@@ -4,9 +4,13 @@
 
     export let currentTier = 'C'; // Default to Cold/Welcome
     export let userId = "test-user-123";
+    export let agentName = "André Digital"; // Configurable
+    export let companyName = "Dolarize"; // Configurable
+
+    const API_BASE_URL = import.meta.env.PUBLIC_API_URL || 'https://dolarize-api-493794054971.us-central1.run.app';
 
     let messages = [
-        { sender: 'agent', text: 'Olá. Sou o André Digital. Estou aqui para ajudar você a organizar sua jornada financeira com estrutura e segurança.' },
+        { sender: 'agent', text: `Olá. Sou o ${agentName}. Estou aqui para ajudar você.` },
     ];
     let newMessage = '';
     let isLoading = false;
@@ -64,7 +68,7 @@
         isLoading = true;
 
         try {
-            const response = await fetch('https://dolarize-api-493794054971.us-central1.run.app/chat', {
+            const response = await fetch(`${API_BASE_URL}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -115,8 +119,8 @@
     <!-- Header -->
     <header class="flex items-center justify-between px-6 py-4 border-b border-dolarize-blue-glow/30 bg-dolarize-dark/95 backdrop-blur-sm sticky top-0 z-10">
         <div class="flex flex-col">
-            <h2 class="text-lg font-bold tracking-tight text-white">André Digital</h2>
-            <span class="text-[10px] text-dolarize-gold uppercase tracking-widest font-semibold">Extensão Dólarize 2.0</span>
+            <h2 class="text-lg font-bold tracking-tight text-white">{agentName}</h2>
+            <span class="text-[10px] text-dolarize-gold uppercase tracking-widest font-semibold">Extensão {companyName}</span>
         </div>
         <div class="flex items-center gap-2">
             <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)] animate-pulse"></div>

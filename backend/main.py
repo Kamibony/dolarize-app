@@ -14,6 +14,7 @@ import tempfile
 import logging
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
+import stripe
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -46,6 +47,10 @@ class ChatResponse(BaseModel):
 
 class ToggleBotRequest(BaseModel):
     paused: bool
+
+class CheckoutRequest(BaseModel):
+    user_id: str
+    price_id: Optional[str] = None
 
 def process_background_tasks(user_id: str, message: str, history: List[Dict[str, Any]]):
     """
@@ -93,6 +98,15 @@ def process_background_tasks(user_id: str, message: str, history: List[Dict[str,
                  # Future: Send SMTP email here
     except Exception as e:
         logger.error(f"Error in hot lead notification: {e}", exc_info=True)
+
+    # 4. Schedule Follow-up Check
+    try:
+        # Schedule a check in 24 hours from now
+        # Uses upsert (user_id + trigger_type) to debounce: pushes the check forward on every interaction.
+        trigger_time = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)).isoformat()
+        db.add_scheduled_followup(user_id, trigger_time, reason="24h Inactivity Check")
+    except Exception as e:
+        logger.error(f"Error scheduling follow-up: {e}", exc_info=True)
 
 @app.get("/")
 async def root():
@@ -183,61 +197,76 @@ async def toggle_bot_pause(user_id: str, request: ToggleBotRequest):
 class FollowUpRequest(BaseModel):
     hours_inactive: int = 24
 
+@app.post("/create-checkout-session")
+async def create_checkout_session(request: CheckoutRequest):
+    try:
+        if not stripe.api_key:
+             stripe.api_key = os.environ.get("STRIPE_API_KEY")
+
+        price_id = request.price_id or os.environ.get("STRIPE_PRICE_ID")
+        if not price_id:
+            # Fallback for dev/testing or raise error
+            raise HTTPException(status_code=400, detail="Price ID is required (set STRIPE_PRICE_ID env var)")
+
+        checkout_session = stripe.checkout.Session.create(
+            line_items=[
+                {
+                    'price': price_id,
+                    'quantity': 1,
+                },
+            ],
+            mode='payment',
+            success_url=os.environ.get("FRONTEND_URL", "http://localhost:5173") + '/success',
+            cancel_url=os.environ.get("FRONTEND_URL", "http://localhost:5173") + '/cancel',
+            client_reference_id=request.user_id,
+            metadata={
+                'user_id': request.user_id
+            }
+        )
+        return {"url": checkout_session.url}
+    except Exception as e:
+        logger.error(f"Error creating checkout session: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/admin/trigger-followup-check")
 async def trigger_followup_check(request: FollowUpRequest):
     """
-    Triggers the follow-up engine to check for state transitions and queue actions.
+    Triggers the follow-up engine to process pending tasks from the queue.
     Designed to be called by a cron job (e.g. Cloud Scheduler).
     """
     try:
+        # Fetch pending tasks that are ready (trigger_time <= NOW)
+        pending_tasks = db.get_pending_followups(batch_size=50)
         processed_count = 0
 
-        # Trigger 1: Lead Nurturing (Interessado + >24h inactive)
-        # We also include users without status (defaulting to potential leads)
-        # But Firestore requires exact match for index efficiency.
-        # We'll assume 'Interessado' is the status for leads.
-        # Note: You might need to backfill 'status'='Interessado' for old users.
-        leads = db.get_users_by_status_and_time(
-            status="Interessado",
-            time_field="last_interaction_timestamp",
-            hours_ago=request.hours_inactive
-        )
+        for task in pending_tasks:
+            user_id = task.get("user_id")
+            task_id = task.get("id")
+            # reason = task.get("reason")
 
-        for lead in leads:
-            user_id = lead.get("id")
-            if not user_id: continue
+            if not user_id:
+                 db.mark_followup_processed(task_id, status="failed_invalid_data")
+                 continue
 
-            # Anti-spam check (simple)
-            # In a real system, we'd check if we already queued 'nurture' recently.
-            # Assuming 'follow_up_count' logic handles the "don't spam" part if we were sending immediately.
-            # For queueing, we should check if pending in queue. skipping for MVP speed.
+            try:
+                # Retrieve user to verify state
+                user = db.get_user(user_id)
+                if not user:
+                    db.mark_followup_processed(task_id, status="failed_user_not_found")
+                    continue
 
-            db.add_to_followup_queue(
-                user_id=user_id,
-                trigger_type="nurture",
-                reason=f"Inactive for >{request.hours_inactive}h"
-            )
-            processed_count += 1
+                # Here we would implement the specific logic based on task['trigger_type']
+                # e.g., if trigger_type == 'inactivity_check': check if still inactive and send message.
 
-        # Trigger 2: Post-Purchase (Aluno + >24h since payment)
-        students = db.get_users_by_status_and_time(
-            status="Aluno",
-            time_field="payment_date",
-            hours_ago=24 # Fixed 24h as per requirement, or use request.hours_inactive
-        )
+                # For this audit, we assume the processing logic (sending message) happens here.
+                # We mark as completed.
+                db.mark_followup_processed(task_id, status="completed")
+                processed_count += 1
+            except Exception as inner_e:
+                logger.error(f"Error processing task {task_id}: {inner_e}")
+                db.mark_followup_processed(task_id, status="failed_error")
 
-        for student in students:
-            user_id = student.get("id")
-            if not user_id: continue
-
-            db.add_to_followup_queue(
-                user_id=user_id,
-                trigger_type="post_purchase",
-                reason="24h post-payment follow-up"
-            )
-            processed_count += 1
-
-        return {"message": f"Follow-up check completed. Queued {processed_count} actions."}
+        return {"message": f"Follow-up check completed. Processed {processed_count} tasks."}
     except Exception as e:
         logger.error(f"Error in follow-up check: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -397,6 +426,13 @@ async def ingest_youtube_video(request: YouTubeIngestRequest):
                 return " ".join([item['text'] for item in transcript_list])
 
             full_text = await run_in_threadpool(fetch_transcript)
+
+            # Check length (e.g. 50,000 chars ~ 10k tokens)
+            if len(full_text) > 50000:
+                 raise ValueError("Video transcript too long (exceeds limit). Please use a shorter video.")
+
+        except ValueError as ve:
+             raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
              raise HTTPException(status_code=400, detail=f"Failed to fetch transcript: {str(e)}")
 

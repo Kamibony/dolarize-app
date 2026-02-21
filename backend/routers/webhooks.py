@@ -141,17 +141,18 @@ async def process_stripe_event(event: Dict[str, Any]):
             customer_email = data.get("customer_details", {}).get("email")
             customer_name = data.get("customer_details", {}).get("name")
 
-            # Metadata might contain user_id if we passed it during checkout creation
+            # Prioritize client_reference_id (standard) or metadata.user_id (custom)
+            client_reference_id = data.get("client_reference_id")
             metadata = data.get("metadata", {})
-            user_id = metadata.get("user_id")
+            user_id = client_reference_id or metadata.get("user_id")
 
-            if customer_email:
+            if customer_email or user_id:
                 timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
                 # Update logic
                 updated = False
 
-                # 1. Try updating by ID if provided
+                # 1. Try updating by ID if provided (MOST RELIABLE)
                 if user_id:
                      user = db.get_user(user_id)
                      if user:
@@ -163,9 +164,11 @@ async def process_stripe_event(event: Dict[str, Any]):
                          })
                          updated = True
                          logger.info(f"User {user_id} upgraded to Aluno via ID.")
+                     else:
+                         logger.warning(f"Payment received with user_id {user_id} but user not found in DB.")
 
-                # 2. If not updated by ID, try by Email
-                if not updated:
+                # 2. If not updated by ID, try by Email (FALLBACK)
+                if not updated and customer_email:
                     updated = db.update_user_status_by_email(
                         email=customer_email,
                         status="Aluno",

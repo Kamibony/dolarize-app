@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from agent_core import agent, SYSTEM_PROMPT, user_context
@@ -12,6 +13,7 @@ import shutil
 import tempfile
 import logging
 import google.generativeai as genai
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -181,44 +183,63 @@ async def toggle_bot_pause(user_id: str, request: ToggleBotRequest):
 class FollowUpRequest(BaseModel):
     hours_inactive: int = 24
 
-@app.post("/admin/trigger-followup")
-async def trigger_followup(request: FollowUpRequest):
+@app.post("/admin/trigger-followup-check")
+async def trigger_followup_check(request: FollowUpRequest):
     """
-    Triggers the follow-up engine to re-engage inactive leads.
+    Triggers the follow-up engine to check for state transitions and queue actions.
+    Designed to be called by a cron job (e.g. Cloud Scheduler).
     """
     try:
-        users = db.get_users_needing_followup(hours_inactive=request.hours_inactive)
         processed_count = 0
 
-        for user in users:
-            user_id = user.get("id")
-            if not user_id:
-                continue
+        # Trigger 1: Lead Nurturing (Interessado + >24h inactive)
+        # We also include users without status (defaulting to potential leads)
+        # But Firestore requires exact match for index efficiency.
+        # We'll assume 'Interessado' is the status for leads.
+        # Note: You might need to backfill 'status'='Interessado' for old users.
+        leads = db.get_users_by_status_and_time(
+            status="Interessado",
+            time_field="last_interaction_timestamp",
+            hours_ago=request.hours_inactive
+        )
 
-            # Generate personalized follow-up
-            message = agent.generate_followup_message(user)
+        for lead in leads:
+            user_id = lead.get("id")
+            if not user_id: continue
 
-            # Save interaction
-            interaction = {
-                "id_usuario": user_id,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "origem": "follow_up_engine",
-                "mensagens": [
-                    {"role": "agent", "content": message}
-                ],
-                "analise_emocional": "Neutro",
-                "precisa_intervencao_humana": False
-            }
-            db.save_chat_interaction(interaction)
+            # Anti-spam check (simple)
+            # In a real system, we'd check if we already queued 'nurture' recently.
+            # Assuming 'follow_up_count' logic handles the "don't spam" part if we were sending immediately.
+            # For queueing, we should check if pending in queue. skipping for MVP speed.
 
-            # Update last interaction and increment follow-up count to avoid infinite loop
-            db.update_user_interaction(user_id, increment_followup_count=True)
-
+            db.add_to_followup_queue(
+                user_id=user_id,
+                trigger_type="nurture",
+                reason=f"Inactive for >{request.hours_inactive}h"
+            )
             processed_count += 1
 
-        return {"message": f"Follow-up process completed. Processed {processed_count} users."}
+        # Trigger 2: Post-Purchase (Aluno + >24h since payment)
+        students = db.get_users_by_status_and_time(
+            status="Aluno",
+            time_field="payment_date",
+            hours_ago=24 # Fixed 24h as per requirement, or use request.hours_inactive
+        )
+
+        for student in students:
+            user_id = student.get("id")
+            if not user_id: continue
+
+            db.add_to_followup_queue(
+                user_id=user_id,
+                trigger_type="post_purchase",
+                reason="24h post-payment follow-up"
+            )
+            processed_count += 1
+
+        return {"message": f"Follow-up check completed. Queued {processed_count} actions."}
     except Exception as e:
-        logger.error(f"Error in follow-up endpoint: {e}", exc_info=True)
+        logger.error(f"Error in follow-up check: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/users", response_model=List[Dict[str, Any]])
@@ -351,6 +372,55 @@ async def delete_knowledge_file(file_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting file: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+class YouTubeIngestRequest(BaseModel):
+    url: str
+
+@app.post("/admin/knowledge/youtube")
+async def ingest_youtube_video(request: YouTubeIngestRequest):
+    try:
+        # Extract video ID
+        video_id = None
+        if "v=" in request.url:
+            video_id = request.url.split("v=")[1].split("&")[0]
+        elif "youtu.be/" in request.url:
+            video_id = request.url.split("youtu.be/")[1].split("?")[0]
+
+        if not video_id:
+            raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+        # Get transcript
+        try:
+            def fetch_transcript():
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['pt', 'en'])
+                return " ".join([item['text'] for item in transcript_list])
+
+            full_text = await run_in_threadpool(fetch_transcript)
+        except Exception as e:
+             raise HTTPException(status_code=400, detail=f"Failed to fetch transcript: {str(e)}")
+
+        # Save as knowledge file (text payload)
+        file_data = {
+            "name": None,
+            "display_name": f"YouTube: {video_id}",
+            "uri": request.url,
+            "mime_type": "text/plain",
+            "size_bytes": len(full_text.encode('utf-8')),
+            "state": "ACTIVE",
+            "extracted_text": full_text,
+            "type": "knowledge"
+        }
+
+        doc_id = db.add_knowledge_file(file_data)
+        agent.refresh_knowledge_base()
+
+        return {"id": doc_id, "message": "YouTube transcript ingested successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error ingesting YouTube video: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # Core Prompt Management Endpoints

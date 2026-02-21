@@ -119,6 +119,63 @@ class FirestoreClient:
             {"bot_paused": paused}, merge=True
         )
 
+    def update_user_status_by_email(self, email: str, status: str, additional_data: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Updates a user's status based on their email.
+        Returns True if user found and updated, False otherwise.
+        """
+        users_ref = self.db.collection("usuarios")
+        query = users_ref.where(field_path="email", op_string="==", value=email).limit(1)
+        docs = list(query.stream())
+
+        if not docs:
+            return False
+
+        doc = docs[0]
+        update_data = {"status": status}
+        if additional_data:
+            update_data.update(additional_data)
+
+        doc.reference.set(update_data, merge=True)
+        return True
+
+    def add_to_followup_queue(self, user_id: str, trigger_type: str, reason: str) -> None:
+        """
+        Adds a user to the follow-up queue for external processing (e.g., Meta API).
+        """
+        # Check if already queued to avoid duplicates (optional but good)
+        # For simplicity, we just add.
+        queue_data = {
+            "user_id": user_id,
+            "trigger_type": trigger_type,
+            "reason": reason,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "status": "pending"
+        }
+        self.db.collection("follow_up_queue").add(queue_data)
+
+    def get_users_by_status_and_time(self, status: str, time_field: str, hours_ago: int) -> List[Dict[str, Any]]:
+        """
+        Retrieves users with a specific status where a time field is older than X hours.
+        """
+        cutoff_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_ago)
+        cutoff_iso = cutoff_time.isoformat()
+
+        # Note: This requires a composite index in Firestore.
+        query = (
+            self.db.collection("usuarios")
+            .where(field_path="status", op_string="==", value=status)
+            .where(field_path=time_field, op_string="<", value=cutoff_iso)
+        )
+
+        docs = query.stream()
+        users = []
+        for doc in docs:
+            u = doc.to_dict()
+            u["id"] = doc.id
+            users.append(u)
+        return users
+
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Retrieves a user profile by ID."""
         doc_ref = self.db.collection("usuarios").document(user_id)

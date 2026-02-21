@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from agent_core import agent, SYSTEM_PROMPT, user_context
 from database import FirestoreClient
 from routers import webhooks
+from services.calendar_service import calendar_service
 from utils import FileParser
 import os
 import datetime
@@ -196,6 +198,54 @@ async def toggle_bot_pause(user_id: str, request: ToggleBotRequest):
 
 class FollowUpRequest(BaseModel):
     hours_inactive: int = 24
+
+# Calendar Integration Endpoints
+
+@app.get("/admin/calendar/auth")
+async def calendar_auth(user_id: str):
+    """
+    Generates the Google Calendar OAuth2 authorization URL.
+    """
+    try:
+        url = calendar_service.get_authorization_url(user_id)
+        return {"url": url}
+    except Exception as e:
+        logger.error(f"Error generating auth URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/calendar/callback")
+async def calendar_callback(code: str, state: str):
+    """
+    Callback for Google Calendar OAuth2.
+    Exchanges code for tokens and saves them to the user profile.
+    State parameter contains the user_id.
+    """
+    user_id = state
+    try:
+        tokens = calendar_service.exchange_code(code)
+
+        # Encrypt tokens before saving
+        from utils import EncryptionManager
+        import json
+
+        tokens_json = json.dumps(tokens)
+        encrypted_tokens = EncryptionManager.encrypt(tokens_json)
+
+        # Save tokens to user profile
+        db.save_user({
+            "id": user_id,
+            "calendar_integration_encrypted": encrypted_tokens,
+            "calendar_connected": True,
+            "calendar_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        })
+
+        # Redirect to frontend settings page (success)
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        return RedirectResponse(f"{frontend_url}/admin?mode=calendar&status=connected")
+
+    except Exception as e:
+        logger.error(f"Error in calendar callback: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/create-checkout-session")
 async def create_checkout_session(request: CheckoutRequest):

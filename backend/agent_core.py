@@ -6,6 +6,7 @@ import contextvars
 from typing import List, Dict, Optional, Any
 from database import FirestoreClient
 from utils import GEMINI_NATIVE_MIME_TYPES, TEXT_PARSABLE_MIME_TYPES
+from services.calendar_service import calendar_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -118,6 +119,14 @@ Aula 3.2: Segurança estrutural da carteira Phantom (bloqueio biométrico, segur
 Aula 3.3: O que é Autocustódia. A regra de ouro da "Recovery Phrase" (nunca tirar print, nunca salvar na nuvem, anotar no papel). Diferença entre corretora (banco) e carteira (cofre).
 
 Instruction for the Agent: "Se a dúvida for sobre como fazer Pix, diga: 'No Módulo 2, Aula 2.2, eu te mostro a tela exata para fazer o Pix e converter para USDC. Dá uma olhada lá e me avise se travar!'."
+
+8. CALENDAR & VIP ACCESS (GAME CHANGER)
+- PERFIL C (CURIOSO/FRIO): JAMAIS ofereça agendamento de reunião. Se pedirem, diga que a agenda do André é exclusiva para mentoria e direcione para o conteúdo gravado.
+- PERFIL B (MORNO): Ofereça a agenda apenas se houver uma dúvida técnica complexa que trave o avanço.
+- PERFIL A (QUALIFICADO/QUENTE): Aja como um "Executive Assistant" de alto nível.
+  -> PROATIVA: "Percebi que você quer resolver isso rápido. O André tem alguns horários. Quer que eu verifique a disponibilidade para amanhã?"
+  -> FERRAMENTA: Use `check_calendar_availability` para ver horários e `book_sales_call` para fechar.
+  -> POSTURA: "André tem uma reunião às 14h, mas consigo te encaixar às 15:30. Funciona para você?"
 """
 
 # Define the Base System Prompt for "André Digital"
@@ -215,6 +224,57 @@ class AgentCore:
             return f"Vídeo Recomendado: {video['title']}\nLink: {video['url']}"
         else:
             return "Vídeo não encontrado."
+
+    def check_calendar_availability(self, date_preference: str = "today") -> str:
+        """
+        Checks for available meeting slots.
+        Args:
+            date_preference: "today" or "tomorrow".
+        Returns:
+            Natural language string with slots.
+        """
+        user_id = user_context.get()
+        if not user_id:
+            return "Erro: Não consegui identificar seu usuário."
+
+        # Gatekeeper Logic (Redundant check, but good for safety)
+        try:
+            user = self.db.get_user(user_id)
+            classification = user.get("classificacao_lead", "") if user else ""
+            if "C" in classification or "Curioso" in classification:
+                return "Desculpe, no momento a agenda do André está fechada para novos agendamentos externos. Posso te ajudar com o material gravado?"
+        except Exception as e:
+            logger.error(f"Error checking user profile for calendar: {e}")
+
+        try:
+            # We need the credentials of the ACCOUNT OWNER (Admin), not the Lead.
+            # For this MVP, we assume a single admin account 'admin_user' holds the calendar token.
+            tenant_id = "admin_user"
+            return calendar_service.get_free_slots(tenant_id, date_preference)
+        except Exception as e:
+            logger.error(f"Error checking calendar: {e}")
+            return "Tive um problema técnico ao acessar a agenda. Tente novamente em alguns instantes."
+
+    def book_sales_call(self, lead_email: str, preferred_time: str) -> str:
+        """
+        Books a meeting.
+        Args:
+            lead_email: The lead's email.
+            preferred_time: The chosen time slot (e.g. "14:00").
+        Returns:
+            Confirmation message with link.
+        """
+        user_id = user_context.get()
+        if not user_id:
+            return "Erro: Contexto inválido."
+
+        try:
+            # Use Admin credentials to create the event
+            tenant_id = "admin_user"
+            return calendar_service.create_meeting(tenant_id, lead_email, preferred_time)
+        except Exception as e:
+            logger.error(f"Error booking meeting: {e}")
+            return "Não consegui confirmar o agendamento agora. Por favor, verifique se o horário ainda está livre."
 
     def extract_lead_info(self, name: Optional[str] = None, email: Optional[str] = None, phone: Optional[str] = None, pain_point: Optional[str] = None, profile_category: Optional[str] = None) -> str:
         """
@@ -390,8 +450,10 @@ class AgentCore:
             except Exception as e:
                 logger.error(f"Error fetching data from DB: {e}")
 
-        # Always enable extract_lead_info
+        # Always enable extract_lead_info and Calendar tools
         tools_list.append(self.extract_lead_info)
+        tools_list.append(self.check_calendar_availability)
+        tools_list.append(self.book_sales_call)
 
         logger.info(f"Initializing Agent with {len(self.active_persona_files)} persona files, {len(self.active_knowledge_files)} knowledge files, and {len(tools_list)} tools.")
 

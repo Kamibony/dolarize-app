@@ -3,6 +3,7 @@ import sys
 import json
 import uuid
 import logging
+import datetime
 from typing import List, Dict, Any
 import google.generativeai as genai
 
@@ -61,7 +62,7 @@ class ConversationSimulator:
         self.db.db.collection('usuarios').document(user_id).set({
             "id": user_id,
             "nome": f"Simulado {persona_name}",
-            "created_at": self.db._now()
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         })
 
         persona_config = PERSONAS[persona_name]

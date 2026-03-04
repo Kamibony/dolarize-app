@@ -1,0 +1,10 @@
+--- +page.svelte
++++ +page.svelte
+@@ -23,6 +23,7 @@
+             } else {
+                 throw new Error('No simulation data found in Firestore.');
+             }
+         } catch (err) {
+             error = err instanceof Error ? err.message : String(err);
++            console.error(err);
+         } finally {

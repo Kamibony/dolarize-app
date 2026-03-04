@@ -37,7 +37,11 @@ app.add_middleware(
 app.include_router(webhooks.router)
 
 # Initialize Firestore
-db = FirestoreClient()
+try:
+    db = FirestoreClient()
+except Exception as e:
+    logger.error(f"Failed to initialize FirestoreClient in main: {e}")
+    db = None
 
 class ChatRequest(BaseModel):
     message: str
@@ -307,9 +311,42 @@ async def trigger_followup_check(request: FollowUpRequest):
 
                 # Here we would implement the specific logic based on task['trigger_type']
                 # e.g., if trigger_type == 'inactivity_check': check if still inactive and send message.
+                if task.get("trigger_type") == "inactivity_check" or task.get("trigger_type", "").endswith("Inactivity Check") or "Inactivity Check" in task.get("reason", ""):
+                    # Check if still inactive
+                    cutoff_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=request.hours_inactive)
+                    last_interaction_str = user.get("last_interaction_timestamp")
 
-                # For this audit, we assume the processing logic (sending message) happens here.
-                # We mark as completed.
+                    if last_interaction_str:
+                        last_interaction = datetime.datetime.fromisoformat(last_interaction_str)
+                        if last_interaction < cutoff_time:
+                            # User is still inactive, check follow-up count
+                            follow_up_count = user.get("follow_up_count", 0)
+                            if follow_up_count < 2:  # Allow Follow-up 1 and Follow-up 2
+                                followup_msg = agent.generate_followup_message(user)
+                                if followup_msg:
+                                    # Save to interaction history
+                                    new_interaction = {
+                                        "id_usuario": user_id,
+                                        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                        "origem": "follow_up_bot",
+                                        "mensagens": [
+                                            {"role": "agent", "content": followup_msg}
+                                        ],
+                                        "analise_emocional": "Neutro",
+                                        "precisa_intervencao_humana": False
+                                    }
+                                    db.save_chat_interaction(new_interaction)
+
+                                    # Update interaction state to prevent spam
+                                    db.update_user_interaction(user_id, increment_followup_count=True)
+
+                                    # We attempt to dispatch via MetaService if we have the phone number
+                                    phone = user.get("telefone")
+                                    if phone:
+                                        from services.meta_service import meta_service
+                                        await meta_service.send_whatsapp_message(phone, followup_msg)
+
+                # Mark as completed
                 db.mark_followup_processed(task_id, status="completed")
                 processed_count += 1
             except Exception as inner_e:

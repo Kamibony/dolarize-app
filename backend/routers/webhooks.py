@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 
 # Initialize Firestore
 # Safe to call multiple times due to check in database.py
-db = FirestoreClient()
+try:
+    db = FirestoreClient()
+except Exception as e:
+    logger.error(f"Failed to initialize FirestoreClient in webhooks: {e}")
+    db = None
 
 META_VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN")
 META_APP_SECRET = os.environ.get("META_APP_SECRET")
@@ -74,6 +78,20 @@ async def verify_webhook(
 
     logger.warning("Webhook verification failed. Token mismatch.")
     raise HTTPException(status_code=403, detail="Verification failed")
+
+@router.post("/webhook/telegram")
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Receives webhook events from Telegram.
+    """
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    # Delegate to background task
+    background_tasks.add_task(process_telegram_payload, payload)
+    return {"status": "ok"}
 
 @router.post("/webhook/meta")
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -152,38 +170,39 @@ async def process_stripe_event(event: Dict[str, Any]):
                 # Update logic
                 updated = False
 
-                # 1. Try updating by ID if provided (MOST RELIABLE)
-                if user_id:
-                     user = db.get_user(user_id)
-                     if user:
-                         db.save_user({
-                             "id": user_id,
-                             "status": "Aluno",
-                             "payment_date": timestamp,
-                             "payment_provider": "stripe"
-                         })
-                         updated = True
-                         logger.info(f"User {user_id} upgraded to Aluno via ID.")
-                     else:
-                         logger.warning(f"Payment received with user_id {user_id} but user not found in DB.")
+                if db:
+                    # 1. Try updating by ID if provided (MOST RELIABLE)
+                    if user_id:
+                         user = db.get_user(user_id)
+                         if user:
+                             db.save_user({
+                                 "id": user_id,
+                                 "status": "Aluno",
+                                 "payment_date": timestamp,
+                                 "payment_provider": "stripe"
+                             })
+                             updated = True
+                             logger.info(f"User {user_id} upgraded to Aluno via ID.")
+                         else:
+                             logger.warning(f"Payment received with user_id {user_id} but user not found in DB.")
 
-                # 2. If not updated by ID, try by Email (FALLBACK)
-                if not updated and customer_email:
-                    updated = db.update_user_status_by_email(
-                        email=customer_email,
-                        status="Aluno",
-                        additional_data={
-                            "payment_date": timestamp,
-                            "payment_provider": "stripe",
-                            "nome": customer_name # Update name if available
-                        }
-                    )
-                    if updated:
-                        logger.info(f"User {customer_email} upgraded to Aluno via Email.")
-                    else:
-                        logger.warning(f"Payment received for {customer_email} but user not found in DB.")
-                        # Optional: Create a new user placeholder?
-                        # For now, we log it.
+                    # 2. If not updated by ID, try by Email (FALLBACK)
+                    if not updated and customer_email:
+                        updated = db.update_user_status_by_email(
+                            email=customer_email,
+                            status="Aluno",
+                            additional_data={
+                                "payment_date": timestamp,
+                                "payment_provider": "stripe",
+                                "nome": customer_name # Update name if available
+                            }
+                        )
+                        if updated:
+                            logger.info(f"User {customer_email} upgraded to Aluno via Email.")
+                        else:
+                            logger.warning(f"Payment received for {customer_email} but user not found in DB.")
+                            # Optional: Create a new user placeholder?
+                            # For now, we log it.
 
     except Exception as e:
         logger.error(f"Error processing Stripe event: {e}", exc_info=True)
@@ -249,12 +268,35 @@ async def process_meta_payload(payload: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error processing webhook payload: {e}")
 
+async def process_telegram_payload(payload: Dict[str, Any]):
+    """
+    Processes the Telegram webhook payload asynchronously.
+    """
+    try:
+        message = payload.get("message")
+        if not message:
+            return
+
+        chat_id = message.get("chat", {}).get("id")
+        text_body = message.get("text")
+
+        # In a real scenario, map Telegram chat_id to a user_id or use it directly
+        if chat_id and text_body:
+            await handle_message(str(chat_id), text_body, "telegram")
+
+    except Exception as e:
+        logger.error(f"Error processing Telegram payload: {e}")
+
 async def handle_message(user_id: str, text: str, platform: str):
     """
     Core logic to handle the incoming message.
     """
     try:
         logger.info(f"Handling message from {user_id} on {platform}: {text}")
+
+        if not db:
+            logger.error("Firestore client not initialized.")
+            return
 
         # 1. Fetch History
         # We use the user_id (phone or IGSID) as the Firestore document ID.

@@ -74,6 +74,9 @@ Ao receber uma mensagem, classifique a intenção e aplique a lógica:
    F. EXTRAÇÃO DE DADOS (CRM):
       Every time the user reveals information about themselves (Name, Contact, their Financial Pain/Goals, or any intent that helps classify them as Perfil A, B, or C), you MUST immediately call the `extract_lead_info` tool to update the CRM record. Do not wait for all data to be present. Save what you have immediately. Classify them as early as possible based on the qualification logic.
 
+   G. YOUTUBE TRANSCRIPTION (VÍDEOS):
+      Se o usuário enviar um link do YouTube (youtube.com ou youtu.be), use a ferramenta `youtube_transcription_tool` para extrair a transcrição do vídeo e, em seguida, resuma o conteúdo para o usuário, conectando com os princípios do Dólarize.
+
 5. ESTRUTURA DE RESPOSTA OBRIGATÓRIA (CAP. 6)
 Todas as suas respostas devem seguir este template de 4 camadas:
 1. VALIDAÇÃO BREVE: Acolha a mensagem ("Entendi sua dúvida...", "Faz sentido...").
@@ -276,6 +279,47 @@ class AgentCore:
             logger.error(f"Error booking meeting: {e}")
             return "Não consegui confirmar o agendamento agora. Por favor, verifique se o horário ainda está livre."
 
+    def youtube_transcription_tool(self, url: str) -> str:
+        """
+        Fetches the transcript of a YouTube video given its URL.
+
+        Args:
+            url: The YouTube video URL (e.g., https://www.youtube.com/watch?v=...).
+
+        Returns:
+            The raw text transcript of the video or an error message.
+        """
+        from youtube_transcript_api import YouTubeTranscriptApi
+        import urllib.parse as urlparse
+
+        try:
+            # Extract video ID from URL
+            parsed = urlparse.urlparse(url)
+            video_id = ""
+            if "youtube.com" in parsed.netloc:
+                qs = urlparse.parse_qs(parsed.query)
+                if "v" in qs:
+                    video_id = qs["v"][0]
+            elif "youtu.be" in parsed.netloc:
+                video_id = parsed.path.lstrip("/")
+
+            if not video_id:
+                return "Erro: Não foi possível identificar o ID do vídeo na URL fornecida."
+
+            # Fetch transcript (trying pt then en as fallback)
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['pt', 'en'])
+            full_text = " ".join([item['text'] for item in transcript_list])
+
+            # Truncate if too long to fit in context (~10k chars should be safe)
+            if len(full_text) > 10000:
+                full_text = full_text[:10000] + "... (transcrição truncada devido ao tamanho)"
+
+            return f"Transcrição do vídeo:\n{full_text}"
+
+        except Exception as e:
+            logger.error(f"Error fetching YouTube transcript: {e}")
+            return f"Erro ao acessar a transcrição do vídeo: {str(e)}"
+
     def extract_lead_info(self, name: Optional[str] = None, email: Optional[str] = None, phone: Optional[str] = None, pain_point: Optional[str] = None, profile_category: Optional[str] = None) -> str:
         """
         Updates the lead information in the CRM.
@@ -296,13 +340,17 @@ class AgentCore:
             return "Erro: Contexto do usuário não encontrado."
 
         try:
+            # Determine status/tags logic based on profile_category or other info.
+            # If the tool is called, we can tag them as "Interessado". They become "Aluno" when they pay via Stripe.
+            status_tag = "Interessado"
             data = {
                 "id": user_id,
                 "nome": name,
                 "email": email,
                 "telefone": phone,
                 "dor_principal": pain_point,
-                "classificacao_lead": profile_category
+                "classificacao_lead": profile_category,
+                "status": status_tag
             }
             # Remove None values is handled by save_lead, but we pass them anyway as kwargs defaults are None
             self.db.save_lead(data)
@@ -454,6 +502,7 @@ class AgentCore:
         tools_list.append(self.extract_lead_info)
         tools_list.append(self.check_calendar_availability)
         tools_list.append(self.book_sales_call)
+        tools_list.append(self.youtube_transcription_tool)
 
         logger.info(f"Initializing Agent with {len(self.active_persona_files)} persona files, {len(self.active_knowledge_files)} knowledge files, and {len(tools_list)} tools.")
 

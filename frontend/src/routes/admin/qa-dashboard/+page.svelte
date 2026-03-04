@@ -1,5 +1,7 @@
 <script>
     import { onMount } from 'svelte';
+    import { doc, getDoc } from 'firebase/firestore';
+    import { db } from '$lib/firebase';
 
     let simulations = [];
     let timestamp = null;
@@ -7,16 +9,19 @@
     let error = null;
     let selectedTranscript = null;
 
-    const API_URL = import.meta.env.VITE_PUBLIC_API_URL || 'http://localhost:8080';
-
     onMount(async () => {
         try {
-            const response = await fetch(`${API_URL}/admin/qa-simulations/latest`);
-            if (!response.ok) throw new Error('Failed to fetch QA simulations');
+            const docRef = doc(db, 'qa_simulations', 'latest_qa_run');
+            const docSnap = await getDoc(docRef);
 
-            const data = await response.json();
-            simulations = data.runs || [];
-            timestamp = data.timestamp;
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                simulations = data.runs || [];
+                timestamp = data.timestamp;
+            } else {
+                simulations = [];
+                timestamp = null;
+            }
         } catch (err) {
             error = err.message;
         } finally {

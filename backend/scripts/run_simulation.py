@@ -302,5 +302,17 @@ def main():
     # Generate the executive markdown report
     generate_executive_report(simulated_data)
 
+    # Persist the final simulated data payload directly into Firestore for the QA Dashboard
+    try:
+        db = FirestoreClient()
+        # Save as a singleton to system/latest_qa_run (since we want latest results on dashboard)
+        db.db.collection('qa_simulations').document('latest_qa_run').set({
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "runs": simulated_data
+        })
+        logger.info("Successfully pushed simulation results to Firestore (qa_simulations/latest_qa_run).")
+    except Exception as e:
+        logger.error(f"Failed to persist simulation results to Firestore: {e}")
+
 if __name__ == "__main__":
     main()

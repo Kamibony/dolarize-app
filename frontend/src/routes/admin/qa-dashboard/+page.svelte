@@ -1,0 +1,226 @@
+<script>
+    import { onMount } from 'svelte';
+
+    let simulations = [];
+    let timestamp = null;
+    let loading = true;
+    let error = null;
+    let selectedTranscript = null;
+
+    const API_URL = import.meta.env.VITE_PUBLIC_API_URL || 'http://localhost:8080';
+
+    onMount(async () => {
+        try {
+            const response = await fetch(`${API_URL}/admin/qa-simulations/latest`);
+            if (!response.ok) throw new Error('Failed to fetch QA simulations');
+
+            const data = await response.json();
+            simulations = data.runs || [];
+            timestamp = data.timestamp;
+        } catch (err) {
+            error = err.message;
+        } finally {
+            loading = false;
+        }
+    });
+
+    // Scoreboard calculations
+    $: totalRuns = simulations.length;
+    $: metrics = simulations.reduce((acc, run) => {
+        const evalData = run.evaluation || {};
+        if (evalData.extraction_accuracy) acc.extraction++;
+        if (evalData.classification_accuracy) acc.classification++;
+        if (evalData.calendar_gatekeeping) acc.gatekeeping++;
+        if (evalData.nuclear_compliance) acc.nuclear++;
+        return acc;
+    }, { extraction: 0, classification: 0, gatekeeping: 0, nuclear: 0 });
+
+    function getPercentage(value) {
+        if (totalRuns === 0) return 0;
+        return ((value / totalRuns) * 100).toFixed(1);
+    }
+
+    function formatDate(isoString) {
+        if (!isoString) return 'Unknown';
+        return new Date(isoString).toLocaleString();
+    }
+
+    function viewTranscript(run) {
+        selectedTranscript = run;
+    }
+
+    function closeTranscript() {
+        selectedTranscript = null;
+    }
+</script>
+
+<div class="min-h-screen bg-[#0B132B] text-white p-8">
+    <div class="max-w-7xl mx-auto">
+
+        <header class="flex justify-between items-end mb-8 border-b border-gray-800 pb-4">
+            <div>
+                <h1 class="text-3xl font-bold text-[#C5A059]">QA Dashboard</h1>
+                <p class="text-gray-400 mt-2">AI Simulation & Audit Engine Results</p>
+            </div>
+            <div class="text-right">
+                <p class="text-sm text-gray-400">Latest Run</p>
+                <p class="font-mono text-sm">{formatDate(timestamp)}</p>
+            </div>
+        </header>
+
+        {#if loading}
+            <div class="flex justify-center items-center py-20">
+                <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#C5A059]"></div>
+            </div>
+        {:else if error}
+            <div class="bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-lg">
+                <p>Error loading simulations: {error}</p>
+            </div>
+        {:else if totalRuns === 0}
+            <div class="bg-[#111C3A] rounded-lg p-8 text-center border border-gray-800">
+                <p class="text-gray-400">No simulation data available. Run the simulation script first.</p>
+            </div>
+        {:else}
+            <!-- Scoreboard -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+                <div class="bg-[#111C3A] rounded-lg p-6 border border-gray-800 flex flex-col items-center">
+                    <h3 class="text-sm text-gray-400 text-center uppercase tracking-wider mb-2">Extraction</h3>
+                    <div class="text-4xl font-bold text-[#1E40AF] drop-shadow-[0_0_8px_rgba(30,64,175,0.5)]">
+                        {getPercentage(metrics.extraction)}%
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">{metrics.extraction} / {totalRuns} passed</p>
+                </div>
+                <div class="bg-[#111C3A] rounded-lg p-6 border border-gray-800 flex flex-col items-center">
+                    <h3 class="text-sm text-gray-400 text-center uppercase tracking-wider mb-2">Classification</h3>
+                    <div class="text-4xl font-bold text-[#1E40AF] drop-shadow-[0_0_8px_rgba(30,64,175,0.5)]">
+                        {getPercentage(metrics.classification)}%
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">{metrics.classification} / {totalRuns} passed</p>
+                </div>
+                <div class="bg-[#111C3A] rounded-lg p-6 border border-gray-800 flex flex-col items-center">
+                    <h3 class="text-sm text-gray-400 text-center uppercase tracking-wider mb-2">Gatekeeping</h3>
+                    <div class="text-4xl font-bold text-green-500 drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">
+                        {getPercentage(metrics.gatekeeping)}%
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">{metrics.gatekeeping} / {totalRuns} passed</p>
+                </div>
+                <div class="bg-[#111C3A] rounded-lg p-6 border border-gray-800 flex flex-col items-center">
+                    <h3 class="text-sm text-gray-400 text-center uppercase tracking-wider mb-2">Nuclear Rules</h3>
+                    <div class="text-4xl font-bold text-green-500 drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">
+                        {getPercentage(metrics.nuclear)}%
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">{metrics.nuclear} / {totalRuns} passed</p>
+                </div>
+            </div>
+
+            <h2 class="text-xl font-bold mb-4 text-gray-200 border-b border-gray-800 pb-2">Persona Breakdown</h2>
+
+            <!-- Persona Cards Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {#each simulations as run (run.conversation_id)}
+                    <div class="bg-[#111C3A] rounded-lg p-5 border border-gray-800 hover:border-gray-600 transition-colors">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-[#C5A059]">{run.persona}</h3>
+                                <p class="text-xs text-gray-500 font-mono mt-1">ID: {run.conversation_id}</p>
+                            </div>
+                            <button
+                                class="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-sm rounded transition-colors"
+                                on:click={() => viewTranscript(run)}
+                            >
+                                View Transcript
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+                            <div class="bg-black/30 p-2 rounded">
+                                <span class="text-gray-400 block text-xs uppercase">Extraction</span>
+                                <span class={run.evaluation?.extraction_accuracy ? 'text-green-400' : 'text-red-400'}>
+                                    {run.evaluation?.extraction_accuracy ? '✓ PASS' : '✗ FAIL'}
+                                </span>
+                            </div>
+                            <div class="bg-black/30 p-2 rounded">
+                                <span class="text-gray-400 block text-xs uppercase">Classification</span>
+                                <span class={run.evaluation?.classification_accuracy ? 'text-green-400' : 'text-red-400'}>
+                                    {run.evaluation?.classification_accuracy ? '✓ PASS' : '✗ FAIL'}
+                                </span>
+                            </div>
+                            <div class="bg-black/30 p-2 rounded">
+                                <span class="text-gray-400 block text-xs uppercase">Gatekeeping</span>
+                                <span class={run.evaluation?.calendar_gatekeeping ? 'text-green-400' : 'text-red-400'}>
+                                    {run.evaluation?.calendar_gatekeeping ? '✓ GRANTED / BLOCKED CORRECTLY' : '✗ BREACH'}
+                                </span>
+                            </div>
+                            <div class="bg-black/30 p-2 rounded">
+                                <span class="text-gray-400 block text-xs uppercase">Nuclear Rules</span>
+                                <span class={run.evaluation?.nuclear_compliance ? 'text-green-400' : 'text-red-400'}>
+                                    {run.evaluation?.nuclear_compliance ? '✓ SAFE' : '✗ VIOLATION'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {#if run.final_state?.classificacao_lead}
+                            <div class="mt-3 text-xs">
+                                <span class="text-gray-500">Extracted Profile: </span>
+                                <span class="text-[#1E40AF] px-2 py-0.5 bg-blue-900/30 rounded">{run.final_state.classificacao_lead}</span>
+                            </div>
+                        {/if}
+                    </div>
+                {/each}
+            </div>
+        {/if}
+    </div>
+</div>
+
+<!-- Transcript Modal -->
+{#if selectedTranscript}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" on:click={closeTranscript}>
+        <div class="bg-[#111C3A] w-full max-w-4xl max-h-[90vh] rounded-xl border border-gray-700 shadow-2xl flex flex-col" on:click|stopPropagation>
+
+            <div class="p-5 border-b border-gray-800 flex justify-between items-center bg-[#0B132B] rounded-t-xl">
+                <div>
+                    <h2 class="text-xl font-bold text-[#C5A059]">Transcript: {selectedTranscript.persona}</h2>
+                    <p class="text-xs text-gray-500 mt-1">{selectedTranscript.conversation_id}</p>
+                </div>
+                <button class="text-gray-400 hover:text-white p-2" on:click={closeTranscript}>
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 space-y-4 font-mono text-sm">
+                {#each selectedTranscript.transcript as msg}
+                    <div class="p-4 rounded-lg {msg.role === 'user' ? 'bg-blue-900/20 border border-blue-800/50 ml-8' : 'bg-gray-800/50 border border-gray-700 mr-8'}">
+                        <div class="text-xs font-bold mb-2 {msg.role === 'user' ? 'text-blue-400' : 'text-gray-400'}">
+                            {msg.role === 'user' ? 'SIMULATED USER' : 'AI AGENT'}
+                        </div>
+                        <div class="whitespace-pre-wrap text-gray-300 leading-relaxed">{msg.content}</div>
+                    </div>
+                {/each}
+            </div>
+
+            <div class="p-5 border-t border-gray-800 bg-[#0B132B] rounded-b-xl">
+                <h3 class="text-sm text-gray-400 mb-2 uppercase tracking-wider font-bold">Final State (CRM)</h3>
+                <pre class="text-xs text-gray-300 bg-black/50 p-4 rounded overflow-x-auto border border-gray-800">{JSON.stringify(selectedTranscript.final_state, null, 2)}</pre>
+            </div>
+        </div>
+    </div>
+{/if}
+
+<style>
+    /* Custom scrollbar for transcript modal */
+    .overflow-y-auto::-webkit-scrollbar {
+        width: 8px;
+    }
+    .overflow-y-auto::-webkit-scrollbar-track {
+        background: rgba(0,0,0,0.2);
+    }
+    .overflow-y-auto::-webkit-scrollbar-thumb {
+        background: #4b5563;
+        border-radius: 4px;
+    }
+    .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+    }
+</style>

@@ -679,6 +679,17 @@ async def get_lead_insights(user_id: str):
         logger.error(f"Error fetching lead insights: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/admin/qa-simulations/latest")
+async def get_latest_qa_simulation():
+    try:
+        doc = db.db.collection('qa_simulations').document('latest_qa_run').get()
+        if not doc.exists:
+            return {"runs": [], "timestamp": None}
+        return doc.to_dict()
+    except Exception as e:
+        logger.error(f"Error fetching latest QA simulation: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

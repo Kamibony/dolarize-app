@@ -1,7 +1,12 @@
 <script>
     import { onMount } from 'svelte';
+<<<<<<< fix-qa-dashboard-firebase-8217239342447709458
     import { db } from '$lib/firebase';
     import { doc, getDoc } from 'firebase/firestore';
+=======
+    import { doc, getDoc } from 'firebase/firestore';
+    import { db } from '$lib/firebase';
+>>>>>>> main
 
     let simulations = [];
     let timestamp = null;
@@ -19,7 +24,12 @@
                 simulations = data.runs || [];
                 timestamp = data.timestamp;
             } else {
+<<<<<<< fix-qa-dashboard-firebase-8217239342447709458
                 throw new Error('No simulation data found in Firestore.');
+=======
+                simulations = [];
+                timestamp = null;
+>>>>>>> main
             }
         } catch (err) {
             error = err instanceof Error ? err.message : String(err);

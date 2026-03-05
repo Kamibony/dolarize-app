@@ -32,6 +32,16 @@ jobs:
           channelId: live
           projectId: dolarize-app
 
+      - name: Deploy Firestore Rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DOLARIZE_APP }}
+        run: |
+          npm install -g firebase-tools
+          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase_key.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/firebase_key.json
+          npx firebase deploy --only firestore:rules --project dolarize-app
+          rm firebase_key.json
+
   deploy-backend:
     runs-on: ubuntu-latest
     steps:

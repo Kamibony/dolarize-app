@@ -535,8 +535,9 @@ class FirestoreClient:
             return doc_ref.id
 
     def get_videos(self) -> List[Dict[str, Any]]:
-        """Retrieves all videos."""
-        docs = self.db.collection("videos").stream()
+        """Retrieves all active videos."""
+        query = self.db.collection("videos").where(field_path="active", op_string="==", value=True)
+        docs = query.stream()
         videos = []
         for doc in docs:
             v = doc.to_dict()

@@ -130,6 +130,15 @@ Instruction for the Agent: "Se a dúvida for sobre como fazer Pix, diga: 'No Mó
   -> PROATIVA: "Percebi que você quer resolver isso rápido. O André tem alguns horários. Quer que eu verifique a disponibilidade para amanhã?"
   -> FERRAMENTA: Use `check_calendar_availability` para ver horários e `book_sales_call` para fechar.
   -> POSTURA: "André tem uma reunião às 14h, mas consigo te encaixar às 15:30. Funciona para você?"
+
+9. INTEGRAÇÃO DE VÍDEOS (YOUTUBE TRANSCRIPTION)
+Você tem acesso a um catálogo dinâmico de vídeos da "Central de Vídeos Inteligente" (fornecido na seção CATÁLOGO DE VÍDEOS abaixo, se disponível).
+- Você DEVE monitorar a conversa para identificar se o contexto (trigger_context) de algum dos vídeos disponíveis foi atingido.
+- Se o gatilho for atingido E o usuário for classificado como Perfil A ou Perfil B, você DEVE:
+  1. Usar a ferramenta `recommend_video(video_id)` para obter o link do vídeo.
+  2. Recomendar o vídeo de forma entusiasmada.
+  3. IMEDIATAMENTE usar a ferramenta `youtube_transcription_tool(video_url)` para "assistir" ao vídeo.
+  4. Usar a transcrição EXATA do vídeo para responder às dúvidas do usuário usando as palavras e os frameworks do André.
 """
 
 # Define the Base System Prompt for "André Digital"
@@ -475,7 +484,8 @@ class AgentCore:
                         video_prompt_section += "Você tem acesso à ferramenta `recommend_video(video_id)`. "
                         video_prompt_section += "Use esta ferramenta quando o contexto da conversa corresponder a um dos itens abaixo, "
                         video_prompt_section += "MAS APENAS SE O USUÁRIO FOR PERFIL A OU B (Qualificado/Morno).\n"
-                        video_prompt_section += "Leads Perfil C (Frio/Curioso) NÃO devem receber vídeos, a menos que o contexto seja técnico (suporte).\n\n"
+                        video_prompt_section += "Leads Perfil C (Frio/Curioso) NÃO devem receber vídeos, a menos que o contexto seja técnico (suporte).\n"
+                        video_prompt_section += "ATENÇÃO: Conforme a Regra 9, ao recomendar um vídeo, você deve usar `youtube_transcription_tool` na URL do vídeo e responder usando a transcrição exata.\n\n"
                         video_prompt_section += "IDs DISPONÍVEIS:\n"
 
                         for v in videos:

@@ -1,0 +1,13 @@
+
+> dolarize-frontend@0.0.1 dev
+> vite dev
+
+
+  VITE v5.4.21  ready in 1295 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+5:19:40 PM [vite] .env.local changed, restarting server...
+5:19:40 PM [vite] server restarted.
+5:19:56 PM [vite] .env.local changed, restarting server...
+5:19:56 PM [vite] server restarted.

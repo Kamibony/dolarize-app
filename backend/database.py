@@ -95,6 +95,14 @@ class FirestoreClient:
             update_data, merge=True
         )
 
+    def add_tag(self, user_id: str, tag: str) -> None:
+        """
+        Adds a tag to the user profile if it doesn't already exist.
+        """
+        self.db.collection("usuarios").document(user_id).update({
+            "tags": google_firestore.ArrayUnion([tag])
+        })
+
     def update_user_contact_info(self, user_id: str, name: Optional[str] = None, email: Optional[str] = None) -> None:
         """
         Updates the user's name and/or email if provided.

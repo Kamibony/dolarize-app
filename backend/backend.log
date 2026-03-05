@@ -1,0 +1,21 @@
+/app/backend/agent_core.py:4: FutureWarning:
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+2026-03-05 16:49:02,871 - WARNING - ENCRYPTION_KEY not set. Using insecure default key for development persistence.
+2026-03-05 16:49:02,871 - ERROR - Invalid ENCRYPTION_KEY: Fernet key must be 32 url-safe base64-encoded bytes.. generating new one.
+2026-03-05 16:49:02,906 - WARNING - CalendarService initialized in MOCK MODE (Missing GOOGLE_CLIENT_ID/SECRET).
+2026-03-05 16:49:02,906 - ERROR - GOOGLE_API_KEY environment variable is not set.
+2026-03-05 16:49:06,080 - ERROR - Failed to initialize FirestoreClient in AgentCore: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+2026-03-05 16:49:06,080 - ERROR - AgentCore initialized without a valid GenAI configuration.
+2026-03-05 16:49:08,981 - ERROR - Failed to initialize FirestoreClient in webhooks: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+2026-03-05 16:49:11,969 - ERROR - Failed to initialize FirestoreClient in main: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+INFO:     Started server process [5594]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8080 (Press CTRL+C to quit)

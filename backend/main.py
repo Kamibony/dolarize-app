@@ -461,6 +461,18 @@ async def list_knowledge_files(type: Optional[str] = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/admin/knowledge/files/{file_id}")
+async def get_knowledge_file(file_id: str):
+    try:
+        file_data = db.get_knowledge_file(file_id)
+        if not file_data:
+            raise HTTPException(status_code=404, detail="File not found")
+        return file_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/admin/knowledge/files/{file_id}")
 async def delete_knowledge_file(file_id: str):
     try:

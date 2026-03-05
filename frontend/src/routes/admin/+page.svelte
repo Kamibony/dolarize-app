@@ -14,32 +14,35 @@
     let isSidebarOpen = false;
 
     // Filters
-    let filterStatus = 'all'; // 'all' | 'Interessado' | 'Aluno'
-    let filterProfile = 'all'; // 'all' | 'A' | 'B' | 'C'
+    let filterStatus = 'Todos'; // 'Todos' | 'Interessado' | 'Aluno'
+    let filterProfile = 'Todos'; // 'Todos' | 'A' | 'B' | 'C'
 
     // CRM vs KB vs Config vs Videos Mode
     let mode = 'crm'; // 'crm' | 'kb' | 'config' | 'videos' | 'calendar'
 
     // Knowledge Base State
-    let activeKbTab = 'knowledge'; // 'knowledge' | 'persona'
+    let activeKbTab = 'knowledge'; // 'knowledge' | 'youtube' | 'persona' | 'config'
     let knowledgeFiles = [];
     let isLoadingFiles = false;
     let isUploading = false;
     let uploadStatus = ''; // 'success', 'error', ''
     let fileInput;
 
-    // Config State
+    // Config State (Regras Nucleares)
     let corePromptText = '';
     let isLoadingPrompt = false;
     let isSavingPrompt = false;
     let promptStatus = ''; // 'saved', 'reset', 'error', ''
 
-    // Video State
+    // Video State (Central de Vídeos)
     let videos = [];
     let isLoadingVideos = false;
     let isSavingVideo = false;
     let videoForm = { id: null, title: '', url: '', trigger_context: '' };
     let isEditingVideo = false;
+    let expandedVideoId = null;
+    let expandedVideoTranscript = null;
+    let isLoadingTranscript = false;
 
     // Configuration
     const API_BASE_URL = import.meta.env.PUBLIC_API_URL || 'https://dolarize-api-493794054971.us-central1.run.app';
@@ -130,22 +133,29 @@
     }
 
     $: {
-        applyFilters(filterStatus, filterProfile);
+        // Trigger reactivity when users, filterStatus, or filterProfile change
+        let tempUsers = users;
+        let s = filterStatus;
+        let p = filterProfile;
+        applyFilters();
     }
 
     function applyFilters() {
         filteredUsers = users.filter(user => {
+            // Hide Simulation "Ghosts" in CRM (Epic 2)
+            if (user.id && user.id.startsWith("sim_")) return false;
+
             // Status Filter
             // Note: We use 'classificacao_lead' or 'status' if available.
             // If checking 'status' field (which we added in backend), we need to handle legacy.
             // Assuming 'Interessado' is default if no status.
             const userStatus = user.status || 'Interessado';
-            if (filterStatus !== 'all' && userStatus !== filterStatus) return false;
+            if (filterStatus !== 'Todos' && userStatus !== filterStatus) return false;
 
             // Profile Filter (A, B, C)
             // classificacao_lead is like "A - Quente"
             const profile = user.classificacao_lead ? user.classificacao_lead.charAt(0) : '';
-            if (filterProfile !== 'all' && profile !== filterProfile) return false;
+            if (filterProfile !== 'Todos' && profile !== filterProfile) return false;
 
             return true;
         });
@@ -245,7 +255,13 @@
 
     function switchKbTab(tab) {
         activeKbTab = tab;
-        fetchFiles();
+        if (tab === 'knowledge' || tab === 'persona') {
+            fetchFiles();
+        } else if (tab === 'youtube') {
+            fetchVideos();
+        } else if (tab === 'config') {
+            fetchCorePrompt();
+        }
     }
 
     async function handleFileUpload(event) {
@@ -444,6 +460,60 @@
             alert("Erro ao excluir vídeo.");
         }
     }
+
+    async function toggleTranscript(videoId, url) {
+        if (expandedVideoId === videoId) {
+            expandedVideoId = null;
+            expandedVideoTranscript = null;
+            return;
+        }
+
+        expandedVideoId = videoId;
+        isLoadingTranscript = true;
+        expandedVideoTranscript = null;
+
+        try {
+            // Find a file in knowledgeBase files matching this video ID.
+            // When YouTube videos are ingested, they are saved as type 'knowledge'
+            // with display_name: "YouTube: <video_id>" and uri: request.url
+            let ytbId = null;
+            if (url.includes('v=')) {
+                ytbId = url.split('v=')[1].split('&')[0];
+            } else if (url.includes('youtu.be/')) {
+                ytbId = url.split('youtu.be/')[1].split('?')[0];
+            }
+
+            const res = await fetch(`${API_BASE_URL}/admin/knowledge/files?type=knowledge`);
+            if (res.ok) {
+                const files = await res.json();
+
+                const fileForThisVideo = files.find(f =>
+                    (ytbId && f.display_name === `YouTube: ${ytbId}`) ||
+                    (f.uri === url)
+                );
+
+                if (fileForThisVideo) {
+                    // Fetch full file content via the GET endpoint we created
+                    const fileRes = await fetch(`${API_BASE_URL}/admin/knowledge/files/${fileForThisVideo.id}`);
+                    if (fileRes.ok) {
+                        const fileData = await fileRes.json();
+                        expandedVideoTranscript = fileData.extracted_text || "(Nenhum texto extraído encontrado para este vídeo)";
+                    } else {
+                        expandedVideoTranscript = "Erro ao carregar detalhes da transcrição.";
+                    }
+                } else {
+                    expandedVideoTranscript = "Transcrição não encontrada. Certifique-se de que a URL foi ingerida pela aba de Ingestão de YouTube e o formato coincide.";
+                }
+            } else {
+                 expandedVideoTranscript = "Erro ao buscar transcrição.";
+            }
+        } catch (e) {
+            console.error("Transcript fetch error:", e);
+            expandedVideoTranscript = "Erro de conexão ao buscar transcrição.";
+        } finally {
+            isLoadingTranscript = false;
+        }
+    }
 </script>
 
 <div class="flex h-screen bg-dolarize-dark text-white font-sans overflow-hidden">
@@ -472,12 +542,12 @@
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
     `}>
         <div class="p-6 border-b border-dolarize-blue-glow/20 hidden md:block">
-            <div class="flex items-center gap-2 mb-4 cursor-pointer" on:click={() => { selectedUser = null; mode = 'crm'; }}>
+            <button class="flex items-center gap-2 mb-4 cursor-pointer text-left focus:outline-none" on:click={() => { selectedUser = null; mode = 'crm'; }}>
                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-dolarize-gold">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
                 </svg>
                 <h1 class="text-xl font-bold tracking-tight text-white">Admin Console</h1>
-            </div>
+            </button>
 
             <!-- Navigation Tabs -->
             <div class="flex space-x-1 bg-black/20 p-1 rounded-lg">
@@ -488,22 +558,10 @@
                     CRM
                 </button>
                 <button
-                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'videos' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                    on:click={() => { mode = 'videos'; selectedUser = null; }}
-                >
-                    Vídeos
-                </button>
-                <button
                     class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'kb' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                     on:click={() => { mode = 'kb'; selectedUser = null; }}
                 >
                     Conhecimento
-                </button>
-                <button
-                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'config' ? 'bg-red-500 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                    on:click={() => { mode = 'config'; selectedUser = null; }}
-                >
-                    Nuclear
                 </button>
                 <button
                     class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'calendar' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
@@ -511,6 +569,12 @@
                 >
                     Agenda
                 </button>
+                <a
+                    href="/admin/qa-dashboard"
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all text-center flex items-center justify-center ${mode === 'qa' ? 'bg-green-600 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                >
+                    QA Dashboard
+                </a>
             </div>
         </div>
 
@@ -524,22 +588,10 @@
                     CRM
                 </button>
                 <button
-                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'videos' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                    on:click={() => { mode = 'videos'; selectedUser = null; isSidebarOpen = false; }}
-                >
-                    Vídeos
-                </button>
-                <button
                     class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'kb' ? 'bg-dolarize-gold text-dolarize-dark shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                     on:click={() => { mode = 'kb'; selectedUser = null; isSidebarOpen = false; }}
                 >
                     KB
-                </button>
-                 <button
-                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'config' ? 'bg-red-500 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                    on:click={() => { mode = 'config'; selectedUser = null; isSidebarOpen = false; }}
-                >
-                    Nuc
                 </button>
                  <button
                     class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all ${mode === 'calendar' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
@@ -547,6 +599,12 @@
                 >
                     Age
                 </button>
+                 <a
+                    href="/admin/qa-dashboard"
+                    class={`flex-1 text-xs font-bold uppercase tracking-wider py-2 rounded-md transition-all text-center flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5`}
+                >
+                    QA
+                </a>
             </div>
         </div>
 
@@ -555,13 +613,13 @@
                 <!-- Filters -->
                 <div class="p-4 border-b border-gray-800 flex gap-2">
                     <select bind:value={filterProfile} class="bg-black/20 text-xs text-gray-300 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-dolarize-gold w-1/2">
-                        <option value="all">Perfil: Todos</option>
-                        <option value="A">Perfil A (Quente)</option>
-                        <option value="B">Perfil B (Morno)</option>
-                        <option value="C">Perfil C (Frio)</option>
+                        <option value="Todos">Perfil: Todos</option>
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
                     </select>
                     <select bind:value={filterStatus} class="bg-black/20 text-xs text-gray-300 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-dolarize-gold w-1/2">
-                        <option value="all">Status: Todos</option>
+                        <option value="Todos">Status: Todos</option>
                         <option value="Interessado">Interessado</option>
                         <option value="Aluno">Aluno</option>
                     </select>
@@ -602,35 +660,14 @@
                         {/each}
                     </ul>
                 {/if}
-            {:else if mode === 'videos'}
-                <!-- Videos Info -->
-                <div class="p-6 text-sm text-gray-400 space-y-4">
-                    <p>Central de Vídeos Inteligente.</p>
-                    <p>Cadastre vídeos que a IA recomendará estrategicamente durante as conversas.</p>
-                    <div class="bg-dolarize-gold/10 border border-dolarize-gold/30 p-3 rounded text-xs text-yellow-200">
-                        Nota: A IA apenas recomendará vídeos para leads qualificados (Perfil A ou B).
-                    </div>
-                </div>
             {:else if mode === 'kb'}
                 <!-- Knowledge Base Info -->
                 <div class="p-6 text-sm text-gray-400 space-y-4">
-                    <p>Gerencie aqui os arquivos que compõem o "cérebro" do André Digital.</p>
-                    <p>O agente consultará estes documentos para responder perguntas técnicas.</p>
+                    <p>Centro de Controle Total da IA.</p>
+                    <p>Gerencie todos os aspectos da inteligência, desde os documentos de conhecimento, passando pelos vídeos recomendados, as nuances de personalidade até as regras nucleares inquebráveis.</p>
                     <div class="bg-blue-900/20 border border-blue-500/30 p-3 rounded text-xs text-blue-200">
                         Arquivos suportados: PDF, DOCX, TXT.
                     </div>
-                </div>
-            {:else if mode === 'config'}
-                 <!-- Config Info -->
-                <div class="p-6 text-sm text-gray-400 space-y-4">
-                    <div class="bg-red-900/20 border border-red-500/30 p-4 rounded text-xs text-red-200 font-bold flex items-start gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6 shrink-0">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                        </svg>
-                        <p>AVISO: Esta área altera o DNA do agente. Edições incorretas podem quebrar a lógica de segurança.</p>
-                    </div>
-                    <p>Aqui você edita o "Prompt do Sistema" (System Prompt), que define a identidade e as regras imutáveis do André Digital.</p>
-                    <p class="text-xs text-gray-500">Este texto tem precedência sobre todos os arquivos de conhecimento.</p>
                 </div>
             {:else if mode === 'calendar'}
                 <!-- Calendar Info -->
@@ -847,124 +884,6 @@
                     </div>
                 </div>
             {/if}
-        {:else if mode === 'videos'}
-             <!-- Videos Mode -->
-             <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
-                <div class="flex justify-between items-start mb-8">
-                    <div>
-                        <h1 class="text-2xl font-bold tracking-tight text-white mb-2">Central de Vídeos</h1>
-                        <p class="text-sm text-gray-400">Gerencie a biblioteca de vídeos recomendados pela IA.</p>
-                    </div>
-
-                    <!-- Add Video Button -->
-                     <button
-                        class="bg-dolarize-gold text-dolarize-dark font-bold text-sm px-4 py-2 rounded shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
-                        on:click={() => { cancelEditVideo(); isEditingVideo = true; }}
-                    >
-                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                        Novo Vídeo
-                    </button>
-                </div>
-
-                <!-- Editor Form -->
-                {#if isEditingVideo}
-                    <div class="bg-gray-800/50 border border-dolarize-blue-glow/30 rounded-lg p-6 mb-8 shadow-xl" in:fade>
-                         <h3 class="text-lg font-bold text-white mb-4">{videoForm.id ? 'Editar Vídeo' : 'Novo Vídeo'}</h3>
-                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                             <div>
-                                 <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Título</label>
-                                 <input type="text" bind:value={videoForm.title} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors" placeholder="Ex: Como proteger seu patrimônio">
-                             </div>
-                             <div>
-                                 <label class="block text-xs font-bold uppercase text-gray-400 mb-1">URL (YouTube)</label>
-                                 <input type="text" bind:value={videoForm.url} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors" placeholder="https://youtu.be/...">
-                             </div>
-                         </div>
-                         <div class="mb-4">
-                             <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Contexto de Gatilho (Para a IA)</label>
-                             <textarea bind:value={videoForm.trigger_context} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors h-24 resize-none" placeholder="Descreva QUANDO a IA deve recomendar este vídeo. Ex: Quando o lead perguntar sobre segurança da corretora..."></textarea>
-                         </div>
-                         <div class="flex justify-end gap-3">
-                             <button on:click={cancelEditVideo} class="px-4 py-2 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 text-sm font-semibold transition-colors">Cancelar</button>
-                             <button on:click={saveVideo} disabled={isSavingVideo} class="px-4 py-2 rounded bg-dolarize-gold text-dolarize-dark font-bold text-sm hover:bg-white transition-colors flex items-center gap-2">
-                                 {#if isSavingVideo}Saving...{:else}Salvar Vídeo{/if}
-                             </button>
-                         </div>
-                    </div>
-                {/if}
-
-                <!-- Video List -->
-                <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
-                    <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-white uppercase tracking-wide">Vídeos Ativos</h3>
-                        <span class="text-xs text-gray-400">{videos.length} vídeos</span>
-                    </div>
-
-                    {#if isLoadingVideos}
-                        <div class="p-12 text-center text-gray-500 animate-pulse">Carregando vídeos...</div>
-                    {:else if videos.length === 0}
-                         <div class="p-12 text-center flex flex-col items-center justify-center text-gray-500">
-                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-4 opacity-30">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
-                            </svg>
-                             <p>Nenhum vídeo cadastrado.</p>
-                         </div>
-                    {:else}
-                        <div class="overflow-auto custom-scrollbar flex-1">
-                            <table class="w-full text-left border-collapse">
-                                <thead class="bg-black/20 text-xs text-gray-400 uppercase font-semibold sticky top-0 z-10 backdrop-blur-sm">
-                                    <tr>
-                                        <th class="p-4 border-b border-white/5">Título</th>
-                                        <th class="p-4 border-b border-white/5">Gatilho (Contexto)</th>
-                                        <th class="p-4 border-b border-white/5 text-right">Ação</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-white/5 text-sm">
-                                    {#each videos as video}
-                                    <tr class="hover:bg-white/5 transition-colors group">
-                                        <td class="p-4 font-medium text-white flex items-center gap-3">
-                                            <div class="p-2 bg-red-500/10 rounded text-red-400">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.328l5.603 3.113z" />
-                                                </svg>
-                                            </div>
-                                            <div>
-                                                <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{video.title}</div>
-                                                <a href={video.url} target="_blank" class="text-[10px] text-blue-400 hover:text-blue-300 hover:underline font-mono truncate max-w-[200px] block">{video.url}</a>
-                                            </div>
-                                        </td>
-                                        <td class="p-4 text-gray-400 text-xs leading-relaxed max-w-[300px]">{video.trigger_context}</td>
-                                        <td class="p-4 text-right">
-                                            <button
-                                                class="text-blue-400 hover:text-blue-200 hover:bg-blue-900/30 p-2 rounded transition-colors mr-1"
-                                                title="Editar"
-                                                on:click={() => editVideo(video)}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                class="text-red-400 hover:text-red-200 hover:bg-red-900/30 p-2 rounded transition-colors"
-                                                title="Excluir"
-                                                on:click={() => deleteVideo(video.id)}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                                                  <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                </svg>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {/each}
-                                </tbody>
-                            </table>
-                        </div>
-                    {/if}
-                </div>
-             </div>
         {:else if mode === 'kb'}
             <!-- Knowledge Base Mode -->
              <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gradient-to-br from-dolarize-dark to-dolarize-card" in:fade>
@@ -979,23 +898,30 @@
                                 class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'knowledge' ? 'bg-dolarize-blue-glow/20 text-white shadow ring-1 ring-dolarize-blue-glow/50' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                                 on:click={() => switchKbTab('knowledge')}
                             >
-                                Base de Conhecimento
-                            </button>
-                            <button
-                                class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'persona' ? 'bg-purple-900/40 text-purple-200 shadow ring-1 ring-purple-500/50' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                                on:click={() => switchKbTab('persona')}
-                            >
-                                Centro de Personalidade
+                                Documentos
                             </button>
                             <button
                                 class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'youtube' ? 'bg-red-900/40 text-red-200 shadow ring-1 ring-red-500/50' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                                 on:click={() => switchKbTab('youtube')}
                             >
-                                YouTube
+                                Central de Vídeos
+                            </button>
+                            <button
+                                class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'persona' ? 'bg-purple-900/40 text-purple-200 shadow ring-1 ring-purple-500/50' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                on:click={() => switchKbTab('persona')}
+                            >
+                                Personalidade
+                            </button>
+                            <button
+                                class={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${activeKbTab === 'config' ? 'bg-red-500 text-white shadow ring-1 ring-red-500' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                on:click={() => switchKbTab('config')}
+                            >
+                                Regras Nucleares
                             </button>
                         </div>
                     </div>
 
+                    {#if activeKbTab === 'knowledge' || activeKbTab === 'persona'}
                     <!-- Upload Component -->
                     <div class="flex items-center gap-4">
                          <input
@@ -1025,6 +951,7 @@
                             {/if}
                         </label>
                     </div>
+                {/if}
                 </div>
 
                 {#if uploadStatus === 'success'}
@@ -1042,10 +969,50 @@
                 {/if}
 
                 {#if activeKbTab === 'youtube'}
+                    <div class="mb-8 flex justify-between items-start">
+                        <!-- Add Video Button -->
+                         <button
+                            class="bg-dolarize-gold text-dolarize-dark font-bold text-sm px-4 py-2 rounded shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2"
+                            on:click={() => { cancelEditVideo(); isEditingVideo = true; }}
+                        >
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                            </svg>
+                            Novo Vídeo
+                        </button>
+                    </div>
+
+                    <!-- Editor Form -->
+                    {#if isEditingVideo}
+                        <div class="bg-gray-800/50 border border-dolarize-blue-glow/30 rounded-lg p-6 mb-8 shadow-xl" in:fade>
+                             <h3 class="text-lg font-bold text-white mb-4">{videoForm.id ? 'Editar Vídeo' : 'Novo Vídeo'}</h3>
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                 <div>
+                                     <label for="videoTitle" class="block text-xs font-bold uppercase text-gray-400 mb-1">Título</label>
+                                     <input id="videoTitle" type="text" bind:value={videoForm.title} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors" placeholder="Ex: Como proteger seu patrimônio">
+                                 </div>
+                                 <div>
+                                     <label for="videoUrl" class="block text-xs font-bold uppercase text-gray-400 mb-1">URL (YouTube)</label>
+                                     <input id="videoUrl" type="text" bind:value={videoForm.url} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors" placeholder="https://youtu.be/...">
+                                 </div>
+                             </div>
+                             <div class="mb-4">
+                                 <label for="videoTrigger" class="block text-xs font-bold uppercase text-gray-400 mb-1">Contexto de Gatilho (Para a IA)</label>
+                                 <textarea id="videoTrigger" bind:value={videoForm.trigger_context} class="w-full bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors h-24 resize-none" placeholder="Descreva QUANDO a IA deve recomendar este vídeo. Ex: Quando o lead perguntar sobre segurança da corretora..."></textarea>
+                             </div>
+                             <div class="flex justify-end gap-3">
+                                 <button on:click={cancelEditVideo} class="px-4 py-2 rounded border border-gray-600 text-gray-300 hover:bg-gray-700 text-sm font-semibold transition-colors">Cancelar</button>
+                                 <button on:click={saveVideo} disabled={isSavingVideo} class="px-4 py-2 rounded bg-dolarize-gold text-dolarize-dark font-bold text-sm hover:bg-white transition-colors flex items-center gap-2">
+                                     {#if isSavingVideo}Saving...{:else}Salvar Vídeo{/if}
+                                 </button>
+                             </div>
+                        </div>
+                    {/if}
+
                     <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 p-6 shadow-xl mb-8" in:fade>
                          <h3 class="text-lg font-bold text-white mb-4">Ingestão de Conteúdo (YouTube)</h3>
                          <div class="flex gap-4">
-                             <input type="text" bind:value={youtubeUrl} placeholder="Cole a URL do vídeo aqui (ex: https://youtube.com/watch?v=...)" class="flex-1 bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors">
+                             <input type="text" bind:value={youtubeUrl} placeholder="Cole a URL do vídeo aqui para transcrever (ex: https://youtube.com/watch?v=...)" class="flex-1 bg-black/30 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-dolarize-gold focus:outline-none transition-colors">
                              <button on:click={ingestYoutube} disabled={isIngestingYoutube} class="px-6 py-2 rounded bg-red-600 text-white font-bold text-sm hover:bg-red-500 transition-colors flex items-center gap-2">
                                  {#if isIngestingYoutube}
                                      <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1054,7 +1021,7 @@
                                     </svg>
                                      <span>Processando...</span>
                                  {:else}
-                                     Ingerir
+                                     Ingerir Transcrição
                                  {/if}
                              </button>
                          </div>
@@ -1064,9 +1031,203 @@
                             </div>
                          {/if}
                     </div>
+
+                    <!-- Video List -->
+                    <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl" in:fade>
+                        <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wide">Vídeos Ativos</h3>
+                            <span class="text-xs text-gray-400">{videos.length} vídeos</span>
+                        </div>
+
+                        {#if isLoadingVideos}
+                            <div class="p-12 text-center text-gray-500 animate-pulse">Carregando vídeos...</div>
+                        {:else if videos.length === 0}
+                             <div class="p-12 text-center flex flex-col items-center justify-center text-gray-500">
+                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-4 opacity-30">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                                </svg>
+                                 <p>Nenhum vídeo cadastrado.</p>
+                             </div>
+                        {:else}
+                            <div class="overflow-auto custom-scrollbar flex-1">
+                                <table class="w-full text-left border-collapse">
+                                    <thead class="bg-black/20 text-xs text-gray-400 uppercase font-semibold sticky top-0 z-10 backdrop-blur-sm">
+                                        <tr>
+                                            <th class="p-4 border-b border-white/5">Título / Vídeo</th>
+                                            <th class="p-4 border-b border-white/5 hidden md:table-cell">Gatilho (Contexto)</th>
+                                            <th class="p-4 border-b border-white/5 text-right">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-white/5 text-sm">
+                                        {#each videos as video}
+                                        <tr class="hover:bg-white/5 transition-colors group">
+                                            <td class="p-4 font-medium text-white flex flex-col gap-1">
+                                                <div class="font-bold text-gray-200 group-hover:text-white transition-colors">{video.title}</div>
+                                                <a href={video.url} target="_blank" class="text-[10px] text-blue-400 hover:text-blue-300 hover:underline font-mono truncate max-w-[250px] block">{video.url}</a>
+                                            </td>
+                                            <td class="p-4 text-gray-400 text-xs leading-relaxed max-w-[300px] hidden md:table-cell">
+                                                <div class="truncate" title={video.trigger_context}>{video.trigger_context}</div>
+                                            </td>
+                                            <td class="p-4 text-right">
+                                                <button
+                                                    class="text-green-400 hover:text-green-200 hover:bg-green-900/30 p-2 rounded transition-colors mr-1"
+                                                    title="Ver Transcrição"
+                                                    on:click={() => toggleTranscript(video.id, video.url)}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    class="text-blue-400 hover:text-blue-200 hover:bg-blue-900/30 p-2 rounded transition-colors mr-1"
+                                                    title="Editar"
+                                                    on:click={() => editVideo(video)}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    class="text-red-400 hover:text-red-200 hover:bg-red-900/30 p-2 rounded transition-colors"
+                                                    title="Excluir"
+                                                    on:click={() => deleteVideo(video.id)}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                      <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                    </svg>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {#if expandedVideoId === video.id}
+                                            <tr class="bg-black/40 border-b border-white/5" in:fade>
+                                                <td colspan="3" class="p-4 relative">
+                                                    {#if isLoadingTranscript}
+                                                        <div class="text-xs text-gray-500 animate-pulse py-4 text-center">Carregando transcrição...</div>
+                                                    {:else}
+                                                        <div class="bg-gray-900 rounded border border-gray-700 p-4 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                                            <div class="flex justify-between items-center mb-2 pb-2 border-b border-gray-800">
+                                                                <span class="text-xs font-bold text-gray-400 uppercase tracking-wide">Transcrição Extraída</span>
+                                                                <button class="text-gray-500 hover:text-white" on:click={() => expandedVideoId = null}>
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                            <div class="text-xs text-gray-300 font-mono whitespace-pre-wrap leading-relaxed">
+                                                                {expandedVideoTranscript}
+                                                            </div>
+                                                        </div>
+                                                    {/if}
+                                                </td>
+                                            </tr>
+                                        {/if}
+                                        {/each}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {/if}
+                    </div>
+                {:else if activeKbTab === 'config'}
+                    <div class="flex-1 flex flex-col p-8 overflow-y-auto custom-scrollbar bg-gray-900" in:fade>
+                        <div class="mb-6">
+                            <h1 class="text-2xl font-bold tracking-tight text-white mb-2 flex items-center gap-2">
+                                <span class="text-red-500">⚙️</span> Configurações Nucleares
+                            </h1>
+                            <p class="text-sm text-gray-400">Edite diretamente o prompt do sistema. As alterações têm efeito imediato na próxima interação.</p>
+                        </div>
+
+                        <!-- Warning Banner -->
+                        <div class="bg-orange-900/20 border-l-4 border-orange-500 p-4 mb-6 rounded-r">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-orange-200">
+                                        <strong class="font-bold text-orange-100">CUIDADO EXTREMO:</strong>
+                                        Editar este texto pode alterar a personalidade, segurança e limites do agente. Modifique apenas se souber exatamente o que está fazendo.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status Messages -->
+                        {#if promptStatus === 'saved'}
+                            <div class="mb-4 p-3 bg-green-900/30 border border-green-500/50 text-green-300 text-sm rounded flex items-center gap-2 animate-pulse">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                                Prompt atualizado com sucesso. O cérebro do agente foi reiniciado.
+                            </div>
+                        {:else if promptStatus === 'reset'}
+                             <div class="mb-4 p-3 bg-blue-900/30 border border-blue-500/50 text-blue-300 text-sm rounded flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" /></svg>
+                                Padrão de fábrica restaurado com sucesso.
+                            </div>
+                        {:else if promptStatus === 'error'}
+                             <div class="mb-4 p-3 bg-red-900/30 border border-red-500/50 text-red-300 text-sm rounded flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                                Erro ao salvar alterações. Tente novamente.
+                            </div>
+                        {/if}
+
+                        <!-- Editor -->
+                        <div class="flex-1 flex flex-col relative bg-black/40 rounded-lg border border-gray-700 shadow-inner">
+                            {#if isLoadingPrompt}
+                                <div class="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm rounded-lg">
+                                    <div class="text-white animate-pulse font-mono">Carregando DNA...</div>
+                                </div>
+                            {/if}
+
+                            <div class="bg-gray-800 px-4 py-2 rounded-t-lg border-b border-gray-700 flex justify-between items-center">
+                                <span class="text-xs font-mono text-gray-400">system_prompt.txt</span>
+                                <span class="text-[10px] text-gray-500 uppercase">UTF-8</span>
+                            </div>
+
+                            <textarea
+                                bind:value={corePromptText}
+                                class="flex-1 bg-transparent text-gray-300 font-mono text-sm p-4 resize-none focus:outline-none focus:ring-0 custom-scrollbar leading-relaxed"
+                                spellcheck="false"
+                                disabled={isSavingPrompt}
+                            ></textarea>
+                        </div>
+
+                        <!-- Controls -->
+                        <div class="mt-6 flex justify-between items-center pt-6 border-t border-white/10">
+                            <button
+                                on:click={resetCorePrompt}
+                                disabled={isSavingPrompt}
+                                class="text-red-400 hover:text-red-300 text-xs font-bold uppercase tracking-wider px-4 py-2 rounded border border-red-500/20 hover:bg-red-900/20 transition-all flex items-center gap-2"
+                            >
+                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                </svg>
+                                Restaurar Padrão de Fábrica
+                            </button>
+
+                            <button
+                                on:click={saveCorePrompt}
+                                disabled={isSavingPrompt}
+                                class={`bg-dolarize-gold text-dolarize-dark font-bold text-sm px-6 py-2.5 rounded shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2 ${isSavingPrompt ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                                {#if isSavingPrompt}
+                                     <svg class="animate-spin h-4 w-4 text-dolarize-dark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Salvando...
+                                {:else}
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Salvar Alterações
+                                {/if}
+                            </button>
+                        </div>
+                    </div>
                 {:else}
                     <!-- File List -->
-                    <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl">
+                    <div class="bg-dolarize-card rounded-lg border border-dolarize-blue-glow/20 flex flex-col flex-1 overflow-hidden shadow-xl" in:fade>
                         <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
                             <h3 class="text-sm font-bold text-white uppercase tracking-wide">Arquivos de {activeKbTab === 'persona' ? 'Personalidade' : 'Conhecimento'}</h3>
                             <span class="text-xs text-gray-400">{knowledgeFiles.length} documentos indexados</span>
@@ -1103,7 +1264,7 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-white/5 text-sm">
-                                    {#each knowledgeFiles as file}
+                                    {#each knowledgeFiles.filter(f => f.type === activeKbTab || f.type === undefined) as file}
                                     <tr class="hover:bg-white/5 transition-colors group">
                                         <td class="p-4 font-medium text-white flex items-center gap-3">
                                             <div class="p-2 bg-dolarize-blue-glow/10 rounded text-blue-300">

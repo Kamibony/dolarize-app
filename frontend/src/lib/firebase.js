@@ -3,12 +3,13 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "dolarize-app",
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: "AIzaSyAct_Zdloy0OrC9TlwILU0WAHru7rVhZLk",
+  authDomain: "dolarize-app.firebaseapp.com",
+  projectId: "dolarize-app",
+  storageBucket: "dolarize-app.firebasestorage.app",
+  messagingSenderId: "493794054971",
+  appId: "1:493794054971:web:1ff2314020d64b08749d1e",
+  measurementId: "G-WDYFBV9051"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();

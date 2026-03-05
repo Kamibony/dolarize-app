@@ -1,3 +1,11 @@
+import sys
+from unittest.mock import MagicMock
+sys.modules['google'] = MagicMock()
+sys.modules['google.oauth2'] = MagicMock()
+sys.modules['google.oauth2.credentials'] = MagicMock()
+sys.modules['google.auth'] = MagicMock()
+sys.modules['google.auth.transport'] = MagicMock()
+sys.modules['google.auth.transport.requests'] = MagicMock()
 
 import unittest
 from unittest.mock import MagicMock, patch

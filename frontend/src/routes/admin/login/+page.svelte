@@ -5,6 +5,7 @@
 
     let email = '';
     let password = '';
+    /** @type {string | null} */
     let error = null;
     let loading = false;
 

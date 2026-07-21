@@ -1,8 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Allow public read for qa_simulations as per existing configuration
     match /qa_simulations/{document=**} {
       allow read: if true;
+    }
+
+    // Helper function to check if the user is an admin
+    function isAdmin() {
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if the current user owns the document
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      // Users can read and write their own documents
+      // Admin can read all user documents (for mentor dashboard)
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId);
+
+      // Subcollections within Users
+      match /wallets/{walletId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /daily_logs/{logId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /monthly_snapshots/{snapshotId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /diagnostics/{diagnosticId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
     }
   }
 }

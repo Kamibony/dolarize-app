@@ -3,6 +3,7 @@
     import { auth, db } from '$lib/firebase';
     import { doc, getDoc, updateDoc, setDoc, arrayUnion, arrayRemove, collection, getDocs, addDoc } from 'firebase/firestore';
     import type { User, DailyLog, Wallet } from '$lib/types/database';
+    import { getSolanaBalance } from '$lib/solana-api';
 
     let user: User | null = null;
     let loading = true;
@@ -158,15 +159,10 @@
     async function fetchBalance(address: string) {
         fetchingBalance = true;
         try {
-            const res = await fetch(`/api/solana-balance?address=${encodeURIComponent(address)}`);
-            if (res.ok) {
-                const data = await res.json();
-                walletBalances[address] = data;
-            } else {
-                console.error("Failed to fetch balance");
-            }
+            const data = await getSolanaBalance(address);
+            walletBalances[address] = data;
         } catch (err) {
-            console.error(err);
+            console.error("Failed to fetch balance", err);
         } finally {
             fetchingBalance = false;
         }
